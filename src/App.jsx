@@ -21,6 +21,9 @@ import AddressBook from "./components/AddressBook";
 import BulkOrderModal from "./components/BulkOrderModal";
 import CostCalculator from "./components/CostCalculator";
 import MarketTicker from "./components/MarketTicker";
+import LiveOrderFeed from "./components/LiveOrderFeed";
+import OnboardingTour from "./components/OnboardingTour";
+import InstallmentCalc from "./components/InstallmentCalc";
 
 // Lazy loaded pages
 const HomePage = lazy(() => import("./pages/HomePage"));
@@ -42,6 +45,9 @@ const SeasonalPage = lazy(() => import("./pages/SeasonalPage"));
 const RFQPage = lazy(() => import("./pages/RFQPage"));
 const InventoryPage = lazy(() => import("./pages/InventoryPage"));
 const ContractsPage = lazy(() => import("./pages/ContractsPage"));
+const SupplierProfilePage = lazy(() => import("./pages/SupplierProfilePage"));
+const BlogPage = lazy(() => import("./pages/BlogPage"));
+const ReportPage = lazy(() => import("./pages/ReportPage"));
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -105,6 +111,7 @@ function AppShell() {
   const [showAddress, setShowAddress] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
+  const [showInstallment, setShowInstallment] = useState(false);
 
   const handleOpenProduct = (product) => {
     if (product.pt === "quote") setQuoteModal(product);
@@ -185,6 +192,9 @@ function AppShell() {
                 <Route path="/talep-tahtasi" element={<PageTransition><RFQPage /></PageTransition>} />
                 <Route path="/stok-takip" element={<PageTransition><InventoryPage /></PageTransition>} />
                 <Route path="/kontratlar" element={<PageTransition><ContractsPage /></PageTransition>} />
+                <Route path="/tedarikci-profil/:name" element={<PageTransition><SupplierProfilePage /></PageTransition>} />
+                <Route path="/blog" element={<PageTransition><BlogPage /></PageTransition>} />
+                <Route path="/rapor" element={<PageTransition><ReportPage /></PageTransition>} />
                 <Route path="*" element={<PageTransition><NotFoundPage /></PageTransition>} />
               </Routes>
             </AnimatePresence>
@@ -204,6 +214,9 @@ function AppShell() {
       {showAddress && <AddressBook onClose={() => setShowAddress(false)} />}
       {showBulk && <BulkOrderModal onAddItems={handleBulkAdd} onClose={() => setShowBulk(false)} />}
       {showCalc && <CostCalculator onClose={() => setShowCalc(false)} />}
+      {showInstallment && <InstallmentCalc total={cart.reduce((s, c) => s + c.price * c.qty, 0)} onClose={() => setShowInstallment(false)} />}
+      <LiveOrderFeed />
+      <OnboardingTour />
     </div>
   );
 }

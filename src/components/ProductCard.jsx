@@ -29,6 +29,7 @@ export default function ProductCard({ product, admin, onOpen, isFav, onToggleFav
         )}
       </div>
 
+      {product.img && <img src={product.img} alt={product.name} className="product-img" loading="lazy" />}
       <div className="product-cat">{ct?.icon} {ct?.name}</div>
       <div className="product-name" style={{ paddingRight: 70 }}>{product.name}</div>
       <div className="product-supplier">{product.supplier}</div>

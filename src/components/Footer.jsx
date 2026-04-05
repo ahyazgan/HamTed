@@ -36,9 +36,10 @@ export default function Footer() {
           </div>
           <div>
             <div className="footer-title">Yasal</div>
-            {["Gizlilik Politikasi", "Kullanim Kosullari", "KVKK Aydinlatma", "Mesafeli Satis Sozlesmesi"].map(t => (
-              <div key={t} className="footer-link">{t}</div>
-            ))}
+            <Link to="/yasal/gizlilik" className="footer-link">Gizlilik Politikasi</Link>
+            <Link to="/yasal/kullanim-kosullari" className="footer-link">Kullanim Kosullari</Link>
+            <Link to="/yasal/kvkk" className="footer-link">KVKK Aydinlatma</Link>
+            <Link to="/yasal/mesafeli-satis" className="footer-link">Mesafeli Satis Sozlesmesi</Link>
           </div>
         </div>
         <div className="footer-bottom">

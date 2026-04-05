@@ -84,7 +84,7 @@ export default function Header({ cart, showCart, setShowCart, admin, setAdmin, o
           </button>
 
           <button onClick={onLoginClick} className="btn-primary" style={{ marginLeft: 4 }}>{t.nav.login}</button>
-          <button onClick={() => setAdmin(!admin)} className={`admin-toggle ${admin ? "admin-on" : ""}`}>{admin ? "ADM" : "Adm"}</button>
+          <button onClick={setAdmin} className={`admin-toggle ${admin ? "admin-on" : ""}`}>{admin ? "ADM" : "Adm"}</button>
         </nav>
 
         {/* Mobile nav */}

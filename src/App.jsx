@@ -48,6 +48,7 @@ const ContractsPage = lazy(() => import("./pages/ContractsPage"));
 const SupplierProfilePage = lazy(() => import("./pages/SupplierProfilePage"));
 const BlogPage = lazy(() => import("./pages/BlogPage"));
 const ReportPage = lazy(() => import("./pages/ReportPage"));
+const LegalPage = lazy(() => import("./pages/LegalPage"));
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -104,6 +105,11 @@ function AppShell() {
   // UI
   const [showCart, setShowCart] = useState(false);
   const [admin, setAdmin] = useState(false);
+  const handleAdminToggle = () => {
+    if (admin) { setAdmin(false); return; }
+    const pw = prompt("Admin sifresi:");
+    if (pw === "hamted2026") setAdmin(true);
+  };
   const [loginModal, setLoginModal] = useState(false);
   const [modal, setModal] = useState(null);
   const [quoteModal, setQuoteModal] = useState(null);
@@ -162,7 +168,7 @@ function AppShell() {
       <MarketTicker />
 
       <Header cart={cart} showCart={showCart} setShowCart={setShowCart}
-        admin={admin} setAdmin={setAdmin} onLoginClick={() => setLoginModal(true)}
+        admin={admin} setAdmin={handleAdminToggle} onLoginClick={() => setLoginModal(true)}
         darkMode={darkMode} toggleDark={() => setDarkMode(d => !d)}
         favCount={favs.length} compareCount={compareIds.length}
         lang={lang} setLang={setLang} t={t}
@@ -195,6 +201,7 @@ function AppShell() {
                 <Route path="/tedarikci-profil/:name" element={<PageTransition><SupplierProfilePage /></PageTransition>} />
                 <Route path="/blog" element={<PageTransition><BlogPage /></PageTransition>} />
                 <Route path="/rapor" element={<PageTransition><ReportPage /></PageTransition>} />
+                <Route path="/yasal/:slug" element={<PageTransition><LegalPage /></PageTransition>} />
                 <Route path="*" element={<PageTransition><NotFoundPage /></PageTransition>} />
               </Routes>
             </AnimatePresence>

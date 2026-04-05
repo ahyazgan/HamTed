@@ -1,0 +1,12 @@
+{
+  "name": "HamTed — Hammadde Tedarik Platformu",
+  "short_name": "HamTed",
+  "description": "Turkiye'nin B2B hammadde tedarik platformu",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAFAF8",
+  "theme_color": "#C85A24",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

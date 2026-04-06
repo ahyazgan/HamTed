@@ -28,9 +28,9 @@ export default function CartPanel({ cart, setCart, ship, setShip, admin, onClose
         <div className="cart-header">
           <h3>{t.cart.title}</h3>
           <div style={{ display: "flex", gap: 6 }}>
-            {onShowBulk && <button onClick={onShowBulk} className="btn-sm btn-outline" title="Toplu siparis">{"\uD83D\uDCCB"}</button>}
-            {onShowAddress && <button onClick={onShowAddress} className="btn-sm btn-outline" title="Adres defteri">{"\uD83D\uDCCD"}</button>}
-            <button onClick={onClose} className="modal-close-sm">{"\u2715"}</button>
+            {onShowBulk && <button onClick={onShowBulk} className="btn-sm btn-outline" title="Toplu siparis" aria-label="Toplu siparis">{"\uD83D\uDCCB"}</button>}
+            {onShowAddress && <button onClick={onShowAddress} className="btn-sm btn-outline" title="Adres defteri" aria-label="Adres defteri">{"\uD83D\uDCCD"}</button>}
+            <button onClick={onClose} className="modal-close-sm" aria-label="Sepeti kapat">{"\u2715"}</button>
           </div>
         </div>
 
@@ -63,9 +63,9 @@ export default function CartPanel({ cart, setCart, ship, setShip, admin, onClose
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div className="qty-row" style={{ gap: 4 }}>
-                    <button className="qty-btn" style={{ width: 28, height: 28, fontSize: 14 }} onClick={() => changeQty(it.id, -it.minQty, it.minQty)}>{"\u2212"}</button>
+                    <button className="qty-btn" style={{ width: 28, height: 28, fontSize: 14 }} onClick={() => changeQty(it.id, -it.minQty, it.minQty)} aria-label="Miktari azalt">{"\u2212"}</button>
                     <span style={{ padding: "0 8px", fontSize: 14, fontWeight: 700, minWidth: 40, textAlign: "center" }}>{it.qty} {it.unit}</span>
-                    <button className="qty-btn" style={{ width: 28, height: 28, fontSize: 14 }} onClick={() => changeQty(it.id, it.minQty, it.minQty)}>+</button>
+                    <button className="qty-btn" style={{ width: 28, height: 28, fontSize: 14 }} onClick={() => changeQty(it.id, it.minQty, it.minQty)} aria-label="Miktari artir">+</button>
                   </div>
                   <div className="cart-item-price">{"\u20BA"}{fmt(it.price * it.qty)}</div>
                 </div>

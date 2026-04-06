@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
 import { validateForm } from "../utils/validation";
+import SEO from "../components/SEO";
 
 const FIELDS = [
   { key: "firma", label: "Firma Adi *", type: "text", placeholder: "Sirket unvaniniz", required: true },
@@ -36,6 +37,7 @@ export default function TedarikciPage() {
 
   return (
     <div className="page-content">
+      <SEO title="Tedarikci Ol" description="HamTed'e tedarikci olarak katilarak binlerce aliciya ulasin." />
       <section className="tedarikci-hero">
         <div className="hero-bg-text" style={{ color: C.green }}>TED</div>
         <div className="tedarikci-grid">

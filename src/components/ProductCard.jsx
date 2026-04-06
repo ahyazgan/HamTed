@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { CATS } from "../data/categories";
+import { getProductImage } from "../data/productImages";
 import { fmt } from "../utils/format";
 
 function StockIndicator({ stock }) {
@@ -11,6 +12,9 @@ function StockIndicator({ stock }) {
 export default function ProductCard({ product, admin, onOpen, isFav, onToggleFav, isCompare, onToggleCompare, t }) {
   const ct = CATS.find(c => c.id === product.cat);
   const isQ = product.pt === "quote";
+  
+  const svgStr = getProductImage(product.cat);
+  const imgSrc = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
 
   return (
     <div className="product-card" onClick={() => onOpen(product)}>
@@ -29,7 +33,7 @@ export default function ProductCard({ product, admin, onOpen, isFav, onToggleFav
         )}
       </div>
 
-      {product.img && <img src={product.img} alt={product.name} className="product-img" loading="lazy" />}
+      <img src={imgSrc} alt={product.name} className="product-img" loading="lazy" />
       <div className="product-cat">{ct?.icon} {ct?.name}</div>
       <div className="product-name" style={{ paddingRight: 70 }}>{product.name}</div>
       <div className="product-supplier">{product.supplier}</div>

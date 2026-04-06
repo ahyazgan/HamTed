@@ -9,7 +9,7 @@ export default function ProductModal({ product, admin, onClose, onAddCart }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="modal-close">{"\u2715"}</button>
+        <button onClick={onClose} className="modal-close" aria-label="Kapat">{"\u2715"}</button>
 
         <div className="product-cat">{ct?.icon} {ct?.name}</div>
         <h3 className="modal-title">{product.name}</h3>
@@ -33,10 +33,10 @@ export default function ProductModal({ product, admin, onClose, onAddCart }) {
         <div style={{ marginBottom: 20 }}>
           <label className="field-label">Miktar ({product.unit})</label>
           <div className="qty-row">
-            <button className="qty-btn" onClick={() => setQty(q => Math.max(product.minQty, q - product.minQty))}>{"\u2212"}</button>
+            <button className="qty-btn" onClick={() => setQty(q => Math.max(product.minQty, q - product.minQty))} aria-label="Miktari azalt">{"\u2212"}</button>
             <input type="number" className="qty-input" value={qty}
-              onChange={e => setQty(Math.max(product.minQty, parseInt(e.target.value) || product.minQty))} />
-            <button className="qty-btn" onClick={() => setQty(q => q + product.minQty)}>+</button>
+              onChange={e => setQty(Math.max(product.minQty, parseInt(e.target.value) || product.minQty))} aria-label="Miktar" />
+            <button className="qty-btn" onClick={() => setQty(q => q + product.minQty)} aria-label="Miktari artir">+</button>
             <span className="qty-unit">{product.unit}</span>
           </div>
         </div>

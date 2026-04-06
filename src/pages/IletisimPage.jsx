@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
 import { validateForm } from "../utils/validation";
+import SEO from "../components/SEO";
 
 const FIELDS = [
   { key: "name", label: "Ad Soyad *", type: "text", placeholder: "Adiniz Soyadiniz", required: true },
@@ -34,6 +35,7 @@ export default function IletisimPage() {
 
   return (
     <div className="page-content">
+      <SEO title="Iletisim" description="HamTed ile iletisime gecin. Sorulariniz ve ozel talepleriniz icin bize ulasin." />
       <div className="page-header">
         <div className="section-badge" style={{ background: C.amberBg, borderColor: C.amber+"30", color: C.amber }}>
           Bize Ulasin

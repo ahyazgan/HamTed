@@ -4,6 +4,7 @@ import { PRODUCTS } from "../data/products";
 import { fmt } from "../utils/format";
 import { loadSearchHistory, saveSearchHistory } from "../utils/storage";
 import ProductCard from "../components/ProductCard";
+import SEO from "../components/SEO";
 
 const SORT_OPTIONS_TR = [
   { id: "promo", label: "One Cikanlar" },
@@ -54,6 +55,7 @@ export default function HomePage({ admin, onOpenProduct, favs, toggleFav, compar
 
   return (
     <div className="page-content">
+      <SEO title="Ana Sayfa" description="Turkiye'nin B2B hammadde tedarik platformu. Celik, cimento, kimyasal, tekstil ve daha fazlasi toptan fiyatla." />
       {/* Hero */}
       <section className={`hero ${heroVis ? "hero-visible" : ""}`}>
         <div className="hero-bg-text">HAM</div>

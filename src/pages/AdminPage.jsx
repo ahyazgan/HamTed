@@ -3,6 +3,7 @@ import { PRODUCTS } from "../data/products";
 import { CATS } from "../data/categories";
 import { loadOrders } from "../utils/storage";
 import { fmt } from "../utils/format";
+import SEO from "../components/SEO";
 
 export default function AdminPage({ t }) {
   const [tab, setTab] = useState("overview");
@@ -20,6 +21,7 @@ export default function AdminPage({ t }) {
 
   return (
     <div className="page-content">
+      <SEO title="Admin Dashboard" description="HamTed admin paneli. Gelir, marj ve siparis yonetimi." />
       <div className="page-header" style={{ textAlign: "left" }}>
         <h1 className="page-title">Admin Dashboard</h1>
       </div>

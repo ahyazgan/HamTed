@@ -1,4 +1,5 @@
 import { C } from "../utils/theme";
+import SEO from "../components/SEO";
 
 const STEPS = [
   { num: "1", title: "Urun Secin", desc: "Katalogdan ihtiyaciniz olan hammaddeyi secin veya teklif isteyin.", clr: C.accent },
@@ -10,6 +11,7 @@ const STEPS = [
 export default function NasilCalisirPage() {
   return (
     <div className="page-content">
+      <SEO title="Nasil Calisir" description="HamTed nasil calisir? 4 adimda toptan hammadde tedarikinizi tamamlayin." />
       <div className="page-header">
         <div className="section-badge" style={{ background: C.accentBg, borderColor: C.accentBorder, color: C.accent }}>
           Adim Adim

@@ -2,6 +2,7 @@ import { PRODUCTS } from "../data/products";
 import { CATS } from "../data/categories";
 import { fmt } from "../utils/format";
 import { Link } from "react-router-dom";
+import SEO from "../components/SEO";
 
 function StarRating({ val }) {
   return <span style={{ color: "var(--amber)", fontSize: 14 }}>{"★".repeat(Math.round(val))}{"☆".repeat(5 - Math.round(val))} <span style={{ color: "var(--text-sec)", fontSize: 12 }}>{val}</span></span>;
@@ -43,6 +44,7 @@ export default function ComparePage({ compareIds, removeCompare, t }) {
 
   return (
     <div className="page-content">
+      <SEO title="Urun Karsilastirma" description="Hammadde urunlerini yan yana karsilastirin." />
       <div className="page-header">
         <h1 className="page-title">{t.compare.title}</h1>
         <p className="page-desc">{items.length} urun karsilastiriliyor</p>

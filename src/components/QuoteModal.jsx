@@ -29,7 +29,7 @@ export default function QuoteModal({ product, admin, onClose }) {
   return (
     <div className="modal-overlay" onClick={() => onClose()}>
       <div className="modal-box" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="modal-close">{"\u2715"}</button>
+        <button onClick={onClose} className="modal-close" aria-label="Kapat">{"\u2715"}</button>
 
         <div className="section-badge" style={{ background: C.blueBg, color: C.blue }}>Teklif Talebi</div>
         <h3 className="modal-title" style={{ fontSize: 20 }}>{product.name}</h3>

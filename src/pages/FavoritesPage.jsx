@@ -1,12 +1,14 @@
 import { PRODUCTS } from "../data/products";
 import { Link } from "react-router-dom";
 import ProductCard from "../components/ProductCard";
+import SEO from "../components/SEO";
 
 export default function FavoritesPage({ admin, onOpenProduct, favs, toggleFav }) {
   const favProducts = PRODUCTS.filter(p => favs.includes(p.id));
 
   return (
     <div className="page-content">
+      <SEO title="Favorilerim" description="Favori hammadde urunlerinizi goruntuleyin." />
       <div className="page-header">
         <h1 className="page-title">{"\u2665"} Favorilerim</h1>
         <p className="page-desc">{favProducts.length} urun favorilerinizde</p>

@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { loadOrders } from "../utils/storage";
 import { fmt } from "../utils/format";
+import SEO from "../components/SEO";
 
 const STEPS = [
   { key: "confirmed", label: "Onaylandi", icon: "\u2713" },
@@ -35,6 +36,7 @@ export default function OrderTrackPage({ t }) {
 
   return (
     <div className="page-content">
+      <SEO title="Siparis Takip" description="Siparisizin guncel durumunu takip edin." />
       <div className="page-header">
         <h1 className="page-title">{t.order.track}</h1>
         <p className="page-desc">Siparis: <strong>{order.id}</strong></p>

@@ -65,26 +65,26 @@ export default function Header({ cart, showCart, setShowCart, admin, setAdmin, o
 
           <button onClick={toggleDark} className="theme-toggle" aria-label="Tema">{darkMode ? "\u2600" : "\u263E"}</button>
 
-          <button onClick={onShowCalc} className="nav-btn" title="Maliyet Hesaplayici">{"\uD83E\uDDEE"}</button>
+          <button onClick={onShowCalc} className="nav-btn" title="Maliyet Hesaplayici" aria-label="Maliyet Hesaplayici">{"\uD83E\uDDEE"}</button>
 
-          <button onClick={() => setShowNotifs(!showNotifs)} className="nav-btn" style={{ position: "relative" }}>
+          <button onClick={() => setShowNotifs(!showNotifs)} className="nav-btn" style={{ position: "relative" }} aria-label="Bildirimler">
             {"\uD83D\uDD14"}<span className="notif-badge-dot" />
           </button>
 
-          <Link to="/karsilastir" className="nav-btn">
+          <Link to="/karsilastir" className="nav-btn" aria-label="Urun Karsilastirma">
             {"\u2194"}{compareCount > 0 && <span className="cart-badge" style={{ background: "var(--blue)" }}>{compareCount}</span>}
           </Link>
 
-          <Link to="/favoriler" className="nav-btn">
+          <Link to="/favoriler" className="nav-btn" aria-label="Favoriler">
             {"\u2661"}{favCount > 0 && <span className="cart-badge">{favCount}</span>}
           </Link>
 
-          <button onClick={() => setShowCart(!showCart)} className={`nav-btn ${showCart ? "nav-btn-active" : ""}`}>
+          <button onClick={() => setShowCart(!showCart)} className={`nav-btn ${showCart ? "nav-btn-active" : ""}`} aria-label="Sepet">
             {t.nav.cart}{cart.length > 0 && <span className="cart-badge">{cart.length}</span>}
           </button>
 
-          <button onClick={onLoginClick} className="btn-primary" style={{ marginLeft: 4 }}>{t.nav.login}</button>
-          <button onClick={setAdmin} className={`admin-toggle ${admin ? "admin-on" : ""}`}>{admin ? "ADM" : "Adm"}</button>
+          <button onClick={onLoginClick} className="btn-primary" style={{ marginLeft: 4 }} aria-label="Giris Yap">{t.nav.login}</button>
+          <button onClick={setAdmin} className={`admin-toggle ${admin ? "admin-on" : ""}`} aria-label="Admin modu">{admin ? "ADM" : "Adm"}</button>
         </nav>
 
         {/* Mobile nav */}
@@ -94,11 +94,11 @@ export default function Header({ cart, showCart, setShowCart, admin, setAdmin, o
               <button key={l.id} onClick={() => setLang(l.id)} className={`lang-btn ${lang === l.id ? "lang-active" : ""}`}>{l.flag}</button>
             ))}
           </div>
-          <button onClick={toggleDark} className="theme-toggle">{darkMode ? "\u2600" : "\u263E"}</button>
-          <button onClick={() => setShowCart(!showCart)} className="nav-btn">
+          <button onClick={toggleDark} className="theme-toggle" aria-label="Tema degistir">{darkMode ? "\u2600" : "\u263E"}</button>
+          <button onClick={() => setShowCart(!showCart)} className="nav-btn" aria-label="Sepet">
             {t.nav.cart}{cart.length > 0 && <span className="cart-badge">{cart.length}</span>}
           </button>
-          <button onClick={() => setMobileMenu(!mobileMenu)} className="hamburger-btn">{mobileMenu ? "\u2715" : "\u2630"}</button>
+          <button onClick={() => setMobileMenu(!mobileMenu)} className="hamburger-btn" aria-label="Menu">{mobileMenu ? "\u2715" : "\u2630"}</button>
         </div>
       </div>
 

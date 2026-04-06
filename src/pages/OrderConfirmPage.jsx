@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { loadOrders } from "../utils/storage";
 import { fmt } from "../utils/format";
+import SEO from "../components/SEO";
 
 export default function OrderConfirmPage({ t }) {
   const { orderId } = useParams();
@@ -21,6 +22,7 @@ export default function OrderConfirmPage({ t }) {
 
   return (
     <div className="page-content">
+      <SEO title="Siparis Onay" description="Siparisiz basariyla alindi." />
       <div className="order-confirm-card">
         <div className="success-icon" style={{ width: 72, height: 72, fontSize: 32, marginBottom: 20 }}>{"\u2713"}</div>
         <h1 className="page-title" style={{ color: "var(--green)" }}>{t.order.confirmed}</h1>

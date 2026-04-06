@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { validateForm } from "../utils/validation";
+import SEO from "../components/SEO";
 
 const FIELDS = [
   { key: "firma", label: "Firma Adi *", type: "text", placeholder: "Sirket unvaniniz", required: true },
@@ -48,6 +49,7 @@ export default function RegisterPage({ t }) {
 
   return (
     <div className="page-content">
+      <SEO title="Kayit Ol" description="HamTed'e ucretsiz kayit olun ve toptan hammadde tedariginize baslayin." />
       <div className="register-container">
         <div className="page-header">
           <div className="login-logo">H</div>

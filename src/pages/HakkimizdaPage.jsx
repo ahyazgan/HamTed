@@ -1,8 +1,10 @@
 import { C } from "../utils/theme";
+import SEO from "../components/SEO";
 
 export default function HakkimizdaPage() {
   return (
     <div className="page-content">
+      <SEO title="Hakkimizda" description="HamTed hakkinda bilgi edinin. Turkiye'nin B2B hammadde tedarik platformu." />
       <div className="page-header">
         <div className="section-badge" style={{ background: C.blueBg, borderColor: C.blue+"30", color: C.blue }}>
           Biz Kimiz?

@@ -1,4 +1,4 @@
-﻿apply plugin: 'com.android.application'
+apply plugin: 'com.android.application'
 
 // â”€â”€ Ä°mzalama: android/keystore.properties varsa release imzalanÄ±r â”€â”€
 // Bu dosya .gitignore'da (asla commit edilmez). Yoksa release imzasÄ±z kalÄ±r

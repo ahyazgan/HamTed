@@ -69,3 +69,28 @@ Ocakların söylediği nakliyecilerden başla (sıcak referans). Söz:
 30 gün sonunda tek soru: **"Platformdan haberleşilmiş 3 gerçek sevkiyat
 oldu mu?"** Olduysa → aynı bölgede derinleş. Olmadıysa → nedenini sahada
 sor, ürünü değil önce bölgeyi/sözü değiştir.
+
+---
+
+## 8. Saha araçları (Yönetim Paneli) — 2026-07-29
+
+Bu fazın işini hızlandırmak için panele eklenenler. Hepsi `/admin` altında.
+
+| Sekme | Ne işe yarar |
+|---|---|
+| **Pano › Huni** | Kayıt → ilan → eşleşme dönüşümü. En büyük düşüş nerede ise saha turu oraya. Pano sayı verir, huni "nerede tıkanıyoruz"u verir. |
+| **Eşleştir** | Açık bir iş ilanı seç → o kategoride/güzergâhta uygun nakliyeciler puanlı sırayla gelir (tür ✓ / bölge ✓ / son giriş), her satırda "Ara" düğmesi. Telefonla aracılık ettiğin turu hızlandırır. |
+| **İlan › Kalite kuyruğu** | Fiyatı/açıklaması/miktarı/ilçesi eksik ya da sahibinin telefonu olmayan AKTİF ilanlar. "Sahibini ara" ile tek dokunuşta düzelttirilir. |
+| **Duyuru › Hedefleme** | Duyuru artık **tüm cihazlara** gider (app_config). Rol ve/veya il seçilirse yalnız o üyeler görür; boş bırakılırsa herkese (ziyaretçi dahil). Kaydetmeden önce "kaç üyeye görünür" yazar. |
+| **Üye › Segment + arama** | "7g girmedi / İlan açmadı / Eşleşmedi / Telefonsuz / Banlı" süzgeçleri + rol filtresi + ad/e-posta/telefon/il araması. Üye kartında **son giriş** görünür. |
+| **Üye › Adına ilan ver** | Sahada "sen gir benim yerime" anı: `/ilan-ver?adina=<üyeId>` admin modu. Form hedef üyenin **rolüne** göre açılır, ilan **üyenin** olur (sahiplik, İlanlarım, düzenleme hep onda). Telefon/değerlendirme kapıları bu modda atlanır. |
+
+### Çalıştırılacak SQL (canlı proje)
+
+1. `supabase/migration-2026-07-saha-crm2.sql` — **ŞART.** `profiles.last_seen`
+   + `touch_last_seen()`, `app_config` tablosu (duyuru), `listings_admin_insert`
+   politikası (adına ilan). Bu koşmadan: son giriş boş görünür, duyuru yine
+   yalnız kendi cihazında kalır, adına ilan RLS'e takılır.
+2. `supabase/migration-2026-07-haftalik-ozet.sql` — **opsiyonel.** Pazartesi
+   sabahı pano metriklerini mailine yollar (pg_cron + pg_net + Resend). Dosyanın
+   sonundaki bloktan Resend anahtarını yazmadan mail gitmez.

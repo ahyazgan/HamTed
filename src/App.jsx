@@ -135,25 +135,46 @@ function AppShell() {
   });
   useEffect(() => { if (!SB) saveUsers(users); }, [users, SB]);
   const [audit, setAudit] = useState(() => loadAuditLog());
+  // Ana sayfa duyurusu. SB modunda app_config('announcement') satırından gelir —
+  // yani admin'in yazdığı duyuru TÜM cihazlarda görünür (önceden yalnız admin'in
+  // kendi telefonunda duruyordu). localStorage kopyası offline/soğuk açılış önbelleği.
   const [announcement, setAnnouncement] = useState(() => loadAnnouncement());
+  useEffect(() => {
+    if (!SB) return;
+    api.fetchAppConfig("announcement").then((v) => {
+      if (!v) return;                       // tablo/satır yok → yerel önbellek kalsın
+      const next = { active: false, text: "", tone: "promo", roles: [], iller: [], ...v };
+      setAnnouncement(next);
+      saveAnnouncement(next);
+    }).catch(() => {});
+  }, [SB]);
   const [blocked, setBlocked] = useState(() => loadBlocked()); // { [blockerId]: [engellenenId] }
   const allListings = SB ? userListings : [...userListings, ...LISTINGS];
   const bannedIds = new Set(users.filter((u) => u.status === "banli").map((u) => String(u.id)));
   // Yaptirim: banli kullanicilarin ilanlari kamuya gizlenir (admin tum ilanlari gorur).
   const listings = bannedIds.size ? allListings.filter((l) => !bannedIds.has(String(l.ownerId))) : allListings;
   const reloadListings = async () => { try { setUserListings(await api.fetchListings()); } catch (e) { console.error(e); } };
-  const publishListing = async (listing) => {
+  // asProfile: admin ÜYE ADINA ilan açarken hedef üyenin profili (saha onboarding —
+  // ocak sahibi "sen gir benim yerime" diyor). Sahiplik hedef üyede kalır; ilan
+  // onun "İlanlarım"ında görünür. Sunucu tarafı izni: listings_admin_insert.
+  const publishListing = async (listing, asProfile) => {
     // Yaptirim: banli kullanici ilan veremez — sessiz basari yerine ACIK hata
     // (IlanVerPage catch'i setError ile gosterir; null donmek sahte "yayında" ekrani acardi).
     if (user?.status === "banli") throw new Error("Hesabın askıya alındı.");
+    const onBehalf = asProfile && isAdmin(user) ? asProfile : null;
+    const owner = onBehalf || profile || user;
     if (SB) {
       // DB kaydı başarısızsa hata yukarı fırlatılır; UI sahte "yayında" göstermez.
-      const saved = await api.createListing(listing, profile || user);
+      const saved = await api.createListing(listing, owner);
       await reloadListings();
       return saved; // gerçek DB id'li ilan
     }
-    setUserListings(prev => [listing, ...prev]);
-    return listing;
+    // Yerel modda sahip alanlarını da hedef üyeye çevir (SB'de createListing yapıyor).
+    const rec = onBehalf
+      ? { ...listing, owner: onBehalf.name || "", ownerId: onBehalf.id, ownerVerified: Boolean(onBehalf.verified), ownerRating: onBehalf.rating || 5.0, ownerLogo: onBehalf.logo || "" }
+      : listing;
+    setUserListings(prev => [rec, ...prev]);
+    return rec;
   };
   const updateListing = async (id, patch) => {
     if (SB) {
@@ -611,8 +632,19 @@ function AppShell() {
   // ── Kullanici / kimlik dogrulama ── (users state yukari tasindi: banli filtreleme listings'ten once gerekir)
   // Admin denetim kaydi — kim, ne zaman, ne yapti.
   const logAdmin = (action, detail) => setAudit(appendAudit({ adminId: user?.id, adminName: user?.name || "admin", action, detail }));
-  // Admin: ana sayfa duyuru/kampanya bandini kaydet.
-  const saveAnnouncementAdmin = (next) => { setAnnouncement(next); saveAnnouncement(next); logAdmin("duyuru", next.active ? `Yayında: "${next.text}"` : "Kapatıldı"); };
+  // Admin: ana sayfa duyuru/kampanya bandini kaydet. SB modunda app_config'e yazar
+  // (herkesin cihazina ulasir); DB yazimi basarisizsa yerel state DEGISMEZ — panel
+  // "kaydedildi" deyip duyuru kimseye gitmesin.
+  const saveAnnouncementAdmin = async (next) => {
+    if (SB) {
+      try { await api.saveAppConfig("announcement", next); }
+      catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Duyuru kaydedilemedi.") }; }
+    }
+    setAnnouncement(next); saveAnnouncement(next);
+    const hedef = [(next.roles || []).length ? `${(next.roles || []).length} rol` : "", (next.iller || []).length ? `${(next.iller || []).length} il` : ""].filter(Boolean).join(" + ") || "herkes";
+    logAdmin("duyuru", next.active ? `Yayında (${hedef}): "${next.text}"` : "Kapatıldı");
+    return { ok: true };
+  };
   // Admin: herhangi bir kullaniciyi guncelle (ban/askiya al/rol/manuel onay).
   const updateUserAdmin = async (userId, patch) => {
     // SB modunda önce DB'ye yaz; başarısızsa yerel state'i HİÇ değiştirme
@@ -630,6 +662,22 @@ function AppShell() {
   useEffect(() => { if (!SB) saveUser(user); }, [user, SB]);
   // Sadece kendi araçlarım (fleet yukarıda tanımlı; user burada tanımlandığı için burada hesaplanır).
   const myFleet = fleet.filter((v) => user && String(v.ownerId) === String(user.id));
+  // ── Duyuru hedeflemesi ──────────────────────────────────────────
+  // roles/iller BOŞSA duyuru herkese gider (eski davranış birebir korunur).
+  // Doluysa yalnız eşleşen üyeye gösterilir; hedefli duyuruyu kayıtsız ziyaretçi
+  // görmez (rolü/ili bilinmiyor). Gizleme burada — NakliyeHome dokunulmadı.
+  const visibleAnnouncement = (() => {
+    const a = announcement;
+    if (!a?.active || !a?.text) return a;
+    const roles = Array.isArray(a.roles) ? a.roles : [];
+    const iller = Array.isArray(a.iller) ? a.iller : [];
+    if (!roles.length && !iller.length) return a;
+    const me = profile || user;
+    if (!me) return { ...a, active: false };
+    if (roles.length && !roles.includes(me.role)) return { ...a, active: false };
+    if (iller.length && !iller.includes(me.sehir || me.il || "")) return { ...a, active: false };
+    return a;
+  })();
   const [authReady, setAuthReady] = useState(!SB);                  // SB modunda oturum yuklenince hazir
   // BootLoader minimum gorunme suresi: acilis animasyonu tek karede yok olup
   // "titreme" gibi gorunmesin diye kisa bir taban. Auth mantigini GECIKTIRMEZ.
@@ -763,6 +811,14 @@ function AppShell() {
       api.fetchThreads().then(setMolaThreads).catch(() => {});
     }
   }, [SB, user?.id, user?.role]);
+
+  // Son giriş damgası: oturum açık kullanıcı uygulamayı her açtığında bir kez
+  // dokunur (RPC 1 saatten yeni damgayı tekrar yazmaz). Admin "7 gündür girmemiş"
+  // segmentini bundan üretir. Hata sessiz — akışı hiçbir koşulda bozmaz.
+  useEffect(() => {
+    if (!SB || !user?.id) return;
+    api.touchLastSeen().catch(() => {});
+  }, [SB, user?.id]);
 
   // SB modunda admin giris yapinca moderasyon verisini yukle (profiller + sikayetler).
   // RLS: bu sorgular yalnizca is_admin() icin doner.
@@ -1088,7 +1144,7 @@ function AppShell() {
           <Suspense fallback={<PageLoader />}>
             <AnimatePresence mode="wait">
               <Routes location={location} key={location.pathname}>
-                <Route path="/" element={<PageTransition><NakliyeHome listings={listings} user={user} offers={offers} fleet={myFleet} pendingOffersCount={pendingOffersCount} unreadCount={unreadCount} notifUnread={notif.unread} onLoginClick={requireAuth} onUpdateProfile={updateProfile} announcement={announcement} /></PageTransition>} />
+                <Route path="/" element={<PageTransition><NakliyeHome listings={listings} user={user} offers={offers} fleet={myFleet} pendingOffersCount={pendingOffersCount} unreadCount={unreadCount} notifUnread={notif.unread} onLoginClick={requireAuth} onUpdateProfile={updateProfile} announcement={visibleAnnouncement} /></PageTransition>} />
                 <Route path="/bildirimler" element={<PageTransition><BildirimlerPage user={user} items={notif.items} onSeen={markNotifSeen} onRequireAuth={requireAuth} /></PageTransition>} />
                 <Route path="/sevkiyat" element={<PageTransition><DispatchPage user={user} listings={listings} offers={offers} onRequireAuth={requireAuth} /></PageTransition>} />
                 <Route path="/sefer-gecmisi" element={<PageTransition><TripHistoryPage user={user} listings={listings} offers={offers} onRequireAuth={requireAuth} /></PageTransition>} />
@@ -1100,7 +1156,7 @@ function AppShell() {
                 {PAYMENTS_ENABLED && (
                 <Route path="/cuzdan" element={<PageTransition><CuzdanPage user={user} listings={listings} offers={offers} onRequireAuth={requireAuth} /></PageTransition>} />
                 )}
-                <Route path="/ilan-ver" element={<PageTransition><IlanVerPage onPublish={publishListing} onUpdate={updateListing} listings={listings} offers={offers} reviews={reviews} user={user} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} /></PageTransition>} />
+                <Route path="/ilan-ver" element={<PageTransition><IlanVerPage onPublish={publishListing} onUpdate={updateListing} listings={listings} offers={offers} reviews={reviews} user={user} users={users} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} /></PageTransition>} />
                 <Route path="/ilan-duzenle/:id" element={<PageTransition><IlanVerPage onPublish={publishListing} onUpdate={updateListing} listings={listings} offers={offers} reviews={reviews} user={user} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} /></PageTransition>} />
                 <Route path="/ilanlarim" element={<PageTransition><IlanlarimPage listings={listings} user={user} offers={offers} reviews={reviews} onUpdateOffer={updateOffer} onAcceptOffer={acceptOffer} onUpdateListing={updateListing} onDeleteListing={removeListing} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} getContact={getContact} onReport={addReport} phoneTaps={phoneTaps} /></PageTransition>} />
                 <Route path="/tekliflerim" element={<PageTransition><TekliflerimPage listings={listings} user={user} offers={offers} onRequireAuth={requireAuth} onSeen={markOffersSeen} /></PageTransition>} />

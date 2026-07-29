@@ -975,3 +975,45 @@ alter table public.deleted_accounts enable row level security;
 drop policy if exists deleted_accounts_admin_read on public.deleted_accounts;
 create policy deleted_accounts_admin_read on public.deleted_accounts
   for select using (public.is_admin());
+
+-- ──────────────────────────────────────────────
+-- 15) SAHA CRM 2 (migration-2026-07-saha-crm2.sql govdesi)
+--    last_seen        : "7 gundur girmemis" uye segmenti (touch_last_seen RPC)
+--    app_config       : cihazlar arasi paylasilan ayar; ANA SAYFA DUYURUSU
+--                       (hedeflemeli: rol + il). Okuma yalniz 'announcement'
+--                       anahtarinda herkese acik; digerleri admin-ozel.
+--    listings_admin_insert : admin UYE ADINA ilan acabilsin (saha onboarding)
+-- ──────────────────────────────────────────────
+alter table public.profiles add column if not exists last_seen timestamptz;
+create index if not exists profiles_last_seen_idx on public.profiles (last_seen desc nulls last);
+
+create or replace function public.touch_last_seen()
+returns void language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then return; end if;
+  update public.profiles
+     set last_seen = now()
+   where id = me
+     and (last_seen is null or last_seen < now() - interval '1 hour');
+end; $$;
+revoke all on function public.touch_last_seen() from public;
+grant execute on function public.touch_last_seen() to authenticated;
+
+create table if not exists public.app_config (
+  key        text primary key,
+  value      jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_config enable row level security;
+drop policy if exists app_config_read  on public.app_config;
+drop policy if exists app_config_write on public.app_config;
+create policy app_config_read on public.app_config
+  for select using (key = 'announcement' or public.is_admin());
+create policy app_config_write on public.app_config
+  for all using (public.is_admin()) with check (public.is_admin());
+grant select on public.app_config to anon, authenticated;
+
+drop policy if exists listings_admin_insert on public.listings;
+create policy listings_admin_insert on public.listings
+  for insert with check (public.is_admin());

@@ -98,6 +98,7 @@ const rowToProfile = (r) => r && ({
   phone: r.phone, phoneVerified: r.phone_verified, verified: r.verified, rating: r.rating,
   status: r.status || "aktif",
   createdAt: r.created_at,  // admin Pano "bugün/7 gün yeni üye" sayacı bundan okur
+  lastSeen: r.last_seen || null,  // son giriş — "7 gündür girmemiş" üye segmenti
   logo: r.logo || "",   // firma logosu (Storage public URL)
   // Satıcı (tedarikçi) profil alanları — herkese açık vitrini besler.
   tesisTuru: r.tesis_turu || "", sehir: r.sehir || "", ilce: r.ilce || "",
@@ -381,6 +382,33 @@ export async function setMyRole(role) {
   // RPC yalniz rol bos/isveren iken yazar; satirda ZATEN farkli gercek bir rol varsa
   // (onceki secim) onu dondurur. Bu bir hata degil — mevcut rolu kabul et.
   return { ok: true, profile: prof };
+}
+
+// ── Son giriş damgası (last_seen) ────────────────────────────
+// Uygulama açılışında bir kez çağrılır; admin "7 gündür girmemiş" segmentini
+// bundan üretir. RPC 1 saatten yeni damgayı tekrar yazmaz (gürültü/yazma maliyeti).
+// Migration koşulmamışsa (fonksiyon yok) sessizce yutulur — akış hiç bozulmaz.
+export async function touchLastSeen() {
+  const { error } = await supabase.rpc("touch_last_seen");
+  if (error) console.warn("[touchLastSeen]", error.message);
+}
+
+// ── Uygulama ayarları (app_config) ───────────────────────────
+// Cihazlar arası paylaşılan ayar deposu. Şu anki tek anahtar: 'announcement'
+//   { active, text, tone, roles:[], iller:[] } — roles/iller boşsa herkese.
+// Okuma herkese açıktır (RLS yalnız 'announcement' anahtarını serbest bırakır),
+// yazma yalnız admin. Tablo yoksa (migration koşulmamış) null döner.
+export async function fetchAppConfig(key) {
+  const { data, error } = await supabase.from("app_config").select("value").eq("key", key).maybeSingle();
+  if (error) { console.warn("[fetchAppConfig]", key, error.message); return null; }
+  return data?.value ?? null;
+}
+export async function saveAppConfig(key, value) {
+  const { data, error } = await supabase.from("app_config")
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" })
+    .select("key");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("Ayar kaydedilemedi (yetki yok).");
 }
 
 // Hesabi KALICI sil (App Store/Play zorunlu). delete_my_account RPC auth.users'i

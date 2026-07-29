@@ -13,6 +13,7 @@ import CategoryIcon from "../components/CategoryIcon";
 import { haversineKm } from "../utils/priceEstimate";
 import { newId } from "../utils/id";
 import { pendingReviews } from "../utils/reviewGate";
+import { isAdmin } from "../utils/admin";
 import SEO from "../components/SEO";
 import Logo from "../components/Logo";
 import PhoneGateModal from "../components/PhoneGateModal";
@@ -22,7 +23,7 @@ import { hapticTap, hapticSuccess } from "../native/haptics";
 import { getCurrentPosition } from "../native/geo";
 import {
   ChevronLeft, ArrowRight, Truck, Package, Boxes, Check, CheckCircle2,
-  MapPin, Share2, Pencil, ChevronDown, Navigation,
+  MapPin, Share2, Pencil, ChevronDown, Navigation, Shield,
 } from "lucide-react";
 
 const LocationPicker = lazy(() => import("../components/LocationPicker"));
@@ -162,7 +163,7 @@ function MaterialPicker({ materials, value, onChange }) {
   );
 }
 
-export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers = [], reviews = [], user, fleet = [], onRequireAuth, onUpdateProfile }) {
+export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers = [], reviews = [], user, users = [], fleet = [], onRequireAuth, onUpdateProfile }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const editing = Boolean(id);
@@ -171,6 +172,16 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
   // Yeni ilanda URL ön-doldurma (örn. malzeme siparişi sonrası "Nakliye Ayarla").
   const [sp] = useSearchParams();
   const pf = editing ? {} : Object.fromEntries(sp.entries());
+
+  // ── ADINA İLAN (yalnız admin) — /ilan-ver?adina=<uyeId> ──────────
+  // Saha turunda ocak sahibi "sen gir benim yerime" diyor: admin formu üyenin
+  // adına doldurur, ilan ÜYENİN olur (sahiplik, rol-tür kuralı, İlanlarım hep onda).
+  // adina yoksa / admin değilsen davranış birebir eskisi gibi kalır.
+  const asUser = (!editing && sp.get("adina") && isAdmin(user))
+    ? users.find((u) => String(u.id) === String(sp.get("adina"))) || null
+    : null;
+  // actor: ilanın SAHİBİ olacak kişi (normalde kullanıcının kendisi).
+  const actor = asUser || user;
 
   // Rol = ilan türü. Alıcı iş ilanı, satıcı ürün ilanı, nakliyeci araç ilanı açar.
   // Kullanıcı türü seçmez; rolünden gelir. Bu yüzden state değil, sabit türetim.
@@ -182,11 +193,12 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
   // Öncelik: düzenleme türü > izinli URL ?type= > kullanıcı rolü > "is".
   const ROLE_TYPE = { isveren: "is", tedarikci: "urun", nakliyeci: "arac" };
   const ROLE_ALLOWED = { isveren: ["is"], tedarikci: ["urun", "is"], nakliyeci: ["arac"] };
-  const allowedTypes = ROLE_ALLOWED[user?.role] || null; // rol yoksa giriş kapısı zaten engeller
+  // Tür HEDEF ÜYENİN rolünden türetilir (adına ilanda admin'in kendi rolünden değil).
+  const allowedTypes = ROLE_ALLOWED[actor?.role] || null; // rol yoksa giriş kapısı zaten engeller
   const type =
     editListing?.type ||
     (["is", "arac", "urun"].includes(pf.type) && (!allowedTypes || allowedTypes.includes(pf.type)) ? pf.type : null) ||
-    ROLE_TYPE[user?.role] ||
+    ROLE_TYPE[actor?.role] ||
     "is";
   const [cat, setCat] = useState(editListing?.cat || (["hafriyat", "silobas"].includes(pf.cat) ? pf.cat : "hafriyat"));
   const [form, setForm] = useState(() => editListing ? {
@@ -209,7 +221,7 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
     title: pf.title || "", il: pf.il || "İstanbul", ilce: pf.ilce || "", varisIl: pf.varisIl || pf.il || "İstanbul",
     yukleme: pf.yukleme || "", bosaltma: pf.bosaltma || "",
     material: pf.material || "", amount: pf.amount || "", unit: pf.unit || "ton", vehicle: "", capacity: "",
-    dateText: "", priceType: "sabit", price: "", desc: pf.desc || "", owner: user?.name || "",
+    dateText: "", priceType: "sabit", price: "", desc: pf.desc || "", owner: actor?.name || "",
     recurring: false, recurringFreq: "haftalik", recurringDuration: "", dailyTrips: "",
     stock: "bol", deliveryIncluded: false,
   });
@@ -249,6 +261,10 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       setError("Bu ilan türü rolüne kapalı. Alıcı iş, satıcı ürün, nakliyeci araç ilanı verir.");
       return false;
     }
+    // ADINA İLAN: telefon/değerlendirme kapıları admin'in kendi hesabına ait
+    // olur, hedef üyeye değil — bu modda ikisi de atlanır (admin üyeyi telefonda
+    // onboard ediyor; numarayı zaten elinde tutuyor).
+    if (asUser) return true;
     // Telefon zorunlu: geçerli cep numarası yoksa akış içinde girdirilir.
     if (!isValidPhone(user.phone)) { setNeedPhone(true); return false; }
     const pend = pendingReviews(user, listings, offers, reviews);
@@ -317,18 +333,19 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       // NOT: recurring/recurringText SIFIRLANMAZ — data'daki gerçek seçim korunur
       // (aksi halde "Düzenli iş" seçimi yayında düşerdi; düzenleme akışıyla tutarlı).
       date: "",
-      owner: user?.name || form.owner.trim(),
-      ownerId: user?.id,
-      ownerVerified: user?.verified || false,
-      ownerRating: user?.rating || 5.0,
-      ownerLogo: user?.logo || "",
+      owner: actor?.name || form.owner.trim(),
+      ownerId: actor?.id,
+      ownerVerified: actor?.verified || false,
+      ownerRating: actor?.rating || 5.0,
+      ownerLogo: actor?.logo || "",
       status: "aktif", offers: 0, createdText: "az önce", createdAt: new Date().toISOString(),
     };
     setSaving(true);
     try {
       // Başarı ekranı yalnızca gerçekten kaydedildiyse gösterilir.
       // SB modunda onPublish DB id'li gerçek ilanı döndürür; onu kullan.
-      const saved = (await onPublish?.(listing)) || listing;
+      // 2. argüman: adına ilan verilen üye (yoksa null → normal akış).
+      const saved = (await onPublish?.(listing, asUser)) || listing;
       setPublished(saved);
       setStep(3);
       hapticSuccess();
@@ -381,16 +398,16 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
     const listing = {
       id: newId(),
       ...data,
-      owner: user?.name || form.owner.trim(),
-      ownerId: user?.id,
-      ownerVerified: user?.verified || false,
-      ownerRating: user?.rating || 5.0,
-      ownerLogo: user?.logo || "",
+      owner: actor?.name || form.owner.trim(),
+      ownerId: actor?.id,
+      ownerVerified: actor?.verified || false,
+      ownerRating: actor?.rating || 5.0,
+      ownerLogo: actor?.logo || "",
       status: "aktif", offers: 0, createdText: "az önce", createdAt: new Date().toISOString(),
     };
     setSaving(true);
     try {
-      const saved = (await onPublish?.(listing)) || listing;
+      const saved = (await onPublish?.(listing, asUser)) || listing;
       setPublished(saved);
       setStep(3);
       hapticSuccess();
@@ -405,7 +422,8 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
   const vehicles = VEHICLE_TYPES[cat] || [];
   // Filo: kullanıcının bu kategorideki aktif araçları — ilana hızlı seçim için.
   // fleet App'ten owner-filtreli (myFleet) gelir; burada kategori+aktif süzgeci.
-  const myFleet = user
+  // Adına ilanda filo kısayolu gizlenir — fleet admin'in KENDİ araçları, hedef üyenin değil.
+  const myFleet = user && !asUser
     ? fleet.filter((v) => v.active && v.cat === cat)
     : [];
   const pickFleet = (v) => { set("vehicle", v.vehicle); if (v.capacity) set("capacity", v.capacity); };
@@ -471,7 +489,8 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             <Check size={38} color="#fff" strokeWidth={3} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontFamily: ARCH, fontSize: 24, fontWeight: 900, letterSpacing: "-0.02em", textTransform: "uppercase" }}>İlanın yayında!</h1>
+            <h1 style={{ margin: 0, fontFamily: ARCH, fontSize: 24, fontWeight: 900, letterSpacing: "-0.02em", textTransform: "uppercase" }}>{asUser ? "İlan yayında!" : "İlanın yayında!"}</h1>
+            {asUser && <p style={{ margin: "8px 0 0", fontSize: 14, fontWeight: 700, color: C.ink }}>İlan <b>{asUser.name || asUser.email}</b> adına açıldı — düzenlemeyi o yapabilir.</p>}
             <p style={{ margin: "8px 0 0", fontSize: 14, color: C.sub }}>{isUrun ? "Alıcılar artık ürününü görebilir ve iletişime geçebilir." : published?.type === "arac" ? "Alıcılar aracını sabit fiyattan doğrudan kiralayabilir." : "Nakliyeciler işini sabit fiyattan doğrudan kabul edebilir."}</p>
           </div>
 
@@ -502,8 +521,9 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             <button onClick={shareListing} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: C.card, color: C.ink, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 0", cursor: "pointer" }}>
               <Share2 size={16} /> Paylaş
             </button>
-            <button onClick={() => navigate(`/ilan-duzenle/${published.id}`)} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: C.card, color: C.ink, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 0", cursor: "pointer" }}>
-              <Pencil size={16} /> Düzenle
+            {/* Adına ilanda "Düzenle" admin'i "yetkiniz yok" duvarına götürürdü (sahip üye) — panele dön. */}
+            <button onClick={() => navigate(asUser ? "/admin" : `/ilan-duzenle/${published.id}`)} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: C.card, color: C.ink, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 0", cursor: "pointer" }}>
+              {asUser ? <><Shield size={16} /> Panele dön</> : <><Pencil size={16} /> Düzenle</>}
             </button>
           </div>
 
@@ -544,6 +564,15 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       {/* ──────────────── STEP 1: ne taşınacak + ilan türü ──────────────── */}
       {step === 1 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 22, padding: 16 }}>
+
+          {/* ADINA İLAN uyarısı — admin yanlışlıkla kendi adına açtığını sanmasın */}
+          {asUser && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.yellow, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "11px 13px", boxShadow: "3px 3px 0 rgba(10,10,10,.18)" }}>
+              <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.ink, lineHeight: 1.45 }}>
+                ADINA İLAN — <b>{asUser.name || asUser.email}</b> ({{ isveren: "alıcı", tedarikci: "satıcı", nakliyeci: "nakliyeci" }[asUser.role] || "rolsüz"}). İlan bu üyenin olacak, senin değil.
+              </span>
+            </div>
+          )}
 
           {/* ROL KİMLİĞİ — akışın ne olduğunu tek cümlede söyler (talep/katalog/araç) */}
           {!editing && (

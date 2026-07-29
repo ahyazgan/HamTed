@@ -42,9 +42,11 @@ Sıra önemli — üstten aşağı ilerle.
 
 ## 3. Apple tarafı
 
-- [ ] Apple Developer portal → Identifiers → `com.yuklet.app` →
-  **Associated Domains** capability'sini aç (entitlement repo'da hazır:
-  `applinks:yuklet.co`). Codemagic imza profillerini yeniden üretir.
+- [ ] Apple Developer portal → Identifiers → `co.yuklet.app` (YENİ kimlik —
+  eski `com.yuklet.app` kaydı Private dağıtımla kilitlendi, bkz.
+  YENI-IOS-APP-KAYDI.md) → **Sign in with Apple** + **Associated Domains**
+  capability'lerini aç (entitlement repo'da hazır: `applinks:yuklet.co`).
+  Codemagic imza profillerini yeniden üretir.
 - [x] **Ekran görüntüleri HAZIR (2026-07-17):** `store-assets/ios-6.5/` içinde
   6 adet 1284×2778 (iPhone 6.5") çerçeveli görsel — canlı siteden yakalandı,
   marka paletiyle başlıklandı. ASC → 1.0 → iPhone 6.5" alanına sırayla yükle

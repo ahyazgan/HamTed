@@ -21,7 +21,10 @@ workflows:
         # build sunucuya baglanamaz ("Sunucu baglantisi yapilandirilmamis").
         - yuklet_supabase
       vars:
-        BUNDLE_ID: "com.yuklet.app"
+        # DIKKAT: Ilk kayit (com.yuklet.app) yanlislikla "Private (custom app)"
+        # dagitimla onaylandi ve Apple bunu degistirmiyor (Case 20000119261158).
+        # Cozum: YENI app kaydi + YENI bundle ID. Detay: YENI-IOS-APP-KAYDI.md
+        BUNDLE_ID: "co.yuklet.app"
         # Bu proje CocoaPods DEGIL Swift Package Manager (SPM) kullanir
         # (ios/App/CapApp-SPM). O yuzden .xcworkspace yok, .xcodeproj var.
         XCODE_PROJECT: "ios/App/App.xcodeproj"
@@ -113,7 +116,7 @@ workflows:
           # NOT: Bu adim "Failed to set code signing settings" ile duserse
           # neredeyse her zaman App ID'nin capability'leri (Associated Domains,
           # Sign in with Apple) ile App.entitlements uyusmuyordur — portalda
-          # com.yuklet.app kimliginde ilgili capability acilmali; profil
+          # co.yuklet.app kimliginde ilgili capability acilmali; profil
           # sonraki build'de otomatik yeniden uretilir.
           # (Eski "list-profiles --filter-bundle-id-identifier" teshis komutu
           # CLI'nin yeni surumunde kalkti; kaldirildi.)

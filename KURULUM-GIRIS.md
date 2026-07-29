@@ -16,8 +16,10 @@ Kodda hazır olanlar: `ios/App/App/App.entitlements` (Sign in with Apple) + Xcod
 
 ### B. App ID + capability
 1. developer.apple.com → **Certificates, Identifiers & Profiles → Identifiers → (+)**.
-2. **App IDs → App** → Bundle ID: `com.yuklet.app` (Explicit) → Capabilities listesinde
+2. **App IDs → App** → Bundle ID: `co.yuklet.app` (Explicit) → Capabilities listesinde
    **Sign in with Apple**'ı işaretle → Register.
+   - NOT (2026-07): İlk bundle ID `com.yuklet.app` yanlışlıkla "Private (custom app)"
+     dağıtımla onaylandığı için terk edildi; yenisi `co.yuklet.app`. Bkz. YENI-IOS-APP-KAYDI.md.
    - Not: Xcode'da **Signing & Capabilities → Automatically manage signing** açıksa ve
      hesabın bağlıysa, Xcode ilk arşivde bu kaydı kendisi de oluşturabilir/güncelleyebilir.
 3. Xcode'da doğrulama: `ios/App/App.xcodeproj` aç → App target → **Signing & Capabilities**
@@ -25,7 +27,7 @@ Kodda hazır olanlar: `ios/App/App/App.entitlements` (Sign in with Apple) + Xcod
 
 ### C. Supabase Apple provider
 1. Supabase Dashboard → **Authentication → Sign In / Providers → Apple → Enable**.
-2. **Client IDs** alanına yaz: `com.yuklet.app`
+2. **Client IDs** alanına yaz: `co.yuklet.app` (eski `com.yuklet.app` da listede kalabilir, virgülle ikisi birden yazılabilir)
    (Native `signInWithIdToken` akışı için bundle ID yeterli. "Secret Key" alanı yalnız
    web-OAuth içindir — mobil için BOŞ bırakılabilir.)
 3. Kaydet. Başka bir şey gerekmez — iOS'ta plugin bundle ID'yi otomatik kullanır.
@@ -45,7 +47,7 @@ Hepsi aynı yerde: https://console.cloud.google.com → projeni seç →
 **APIs & Services → Credentials → (+) Create Credentials → OAuth client ID**.
 
 ### A. iOS client
-1. Application type: **iOS** → Bundle ID: `com.yuklet.app` → Create.
+1. Application type: **iOS** → Bundle ID: `co.yuklet.app` → Create.
 2. Çıkan **Client ID**'yi `.env.local`'e ekle:
    `VITE_GOOGLE_IOS_CLIENT_ID=xxxx.apps.googleusercontent.com`
 3. Aynı ekranda **iOS URL scheme** (reversed client ID, `com.googleusercontent.apps.xxxx`)

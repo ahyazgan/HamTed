@@ -46,11 +46,14 @@ Bu, Codemagic'in senin adına yükleme yapmasını sağlayan anahtar.
 1. https://appstoreconnect.apple.com > **Apps** > **+** > **New App**.
 2. Platform: **iOS**.
 3. Name: **YÜKLET**
-4. Bundle ID: **com.yuklet.app** seç.
+4. Bundle ID: **co.yuklet.app** seç.
+   - NOT (2026-07): İlk kayıt `com.yuklet.app` yanlışlıkla "Private (custom app)"
+     dağıtımla onaylandı ve değiştirilemiyor; yeni kayıt `co.yuklet.app` ile
+     açılır. Ayrıntı: YENI-IOS-APP-KAYDI.md.
    - Eğer listede yoksa: https://developer.apple.com/account > Identifiers >
-     **+** > App IDs > App > Description "YUKLET", Bundle ID `com.yuklet.app`
-     (Explicit) > Capabilities'te ihtiyaç olanları (yok gibi) > Register.
-     Sonra App Store Connect'e dönüp tekrar seç.
+     **+** > App IDs > App > Description "YUKLET", Bundle ID `co.yuklet.app`
+     (Explicit) > Capabilities'te **Sign in with Apple** + **Associated Domains**
+     işaretle > Register. Sonra App Store Connect'e dönüp tekrar seç.
 5. SKU: `yuklet` (serbest), Primary Language: Turkish.
 6. Create.
 
@@ -86,7 +89,7 @@ profilini **otomatik üretebilir** (`xcode-project use-profiles` script'i bunu
 kullanır). Ekstra bir şey yapmana gerek yok — Adım 4'teki key yeterli.
 
 > İsteğe bağlı: Codemagic app > Settings > **Code signing (iOS)** >
-> "Automatic" seçili olduğundan emin ol, bundle id `com.yuklet.app`.
+> "Automatic" seçili olduğundan emin ol, bundle id `co.yuklet.app`.
 
 ---
 

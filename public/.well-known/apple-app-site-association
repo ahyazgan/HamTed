@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appID": "REPLACE_TEAMID.com.yuklet.app",
+        "appID": "REPLACE_TEAMID.co.yuklet.app",
         "paths": ["/ilan/*", "/takip/*", "/yasal/*", "/sifre-yenile*", "*"]
       }
     ]

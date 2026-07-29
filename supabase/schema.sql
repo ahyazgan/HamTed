@@ -227,6 +227,14 @@ begin
   exception when others then
     raise notice 'storage temizligi atlandi: %', sqlerrm;
   end;
+  -- v3: PII'siz silme kaydi (deleted_accounts, 5c) — churn gostergesi.
+  -- Kayit hatasi hesap silmeyi ASLA engellemesin.
+  begin
+    insert into public.deleted_accounts(role)
+      select coalesce(role, '') from public.profiles where id = me;
+  exception when others then
+    raise notice 'silme kaydi atlandi: %', sqlerrm;
+  end;
   -- Cascade tum public verisini temizler; auth kullanicisini sil.
   delete from auth.users where id = me;
 end; $$;
@@ -234,6 +242,10 @@ end; $$;
 -- Yalnizca giris yapmis kullanici kendi hesabini cagirabilir.
 revoke all on function public.delete_my_account() from public;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- (5c ADMIN CRM + SİLME KAYDI tablolari dosyanin SONUNDA — is_admin()
+--  tanimindan sonra gelmeli; delete_my_account icindeki insert calisma
+--  zamaninda cozuldugu icin burada sorun olmaz.)
 
 -- ──────────────────────────────────────────────
 -- 6) TRIGGER: ilanin offers_count'u = BEKLEMEDE teklif sayisi.
@@ -935,3 +947,31 @@ do $$ begin
     alter publication supabase_realtime add table public.trip_locations;
   end if;
 end $$;
+
+-- ──────────────────────────────────────────────
+-- 14) ADMIN CRM + SILME KAYDI (admin 1.0.2 paketi — 5c'nin govdesi)
+--    admin_notes: uye kartina not + sonraki arama tarihi (yalniz admin).
+--    deleted_accounts: PII'siz churn kaydi (rol + tarih); insert'i yalniz
+--    delete_my_account yapar (security definer RLS'i baypas eder), admin okur.
+--    is_admin() yukarida tanimli oldugu icin bu blok en sonda.
+-- ──────────────────────────────────────────────
+create table if not exists public.admin_notes (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  note text not null default '',
+  next_call date,
+  updated_at timestamptz not null default now()
+);
+alter table public.admin_notes enable row level security;
+drop policy if exists admin_notes_all on public.admin_notes;
+create policy admin_notes_all on public.admin_notes
+  for all using (public.is_admin()) with check (public.is_admin());
+
+create table if not exists public.deleted_accounts (
+  id bigint generated always as identity primary key,
+  role text not null default '',
+  deleted_at timestamptz not null default now()
+);
+alter table public.deleted_accounts enable row level security;
+drop policy if exists deleted_accounts_admin_read on public.deleted_accounts;
+create policy deleted_accounts_admin_read on public.deleted_accounts
+  for select using (public.is_admin());

@@ -97,6 +97,7 @@ const rowToProfile = (r) => r && ({
   id: r.id, name: r.name, email: r.email, role: r.role,
   phone: r.phone, phoneVerified: r.phone_verified, verified: r.verified, rating: r.rating,
   status: r.status || "aktif",
+  createdAt: r.created_at,  // admin Pano "bugün/7 gün yeni üye" sayacı bundan okur
   logo: r.logo || "",   // firma logosu (Storage public URL)
   // Satıcı (tedarikçi) profil alanları — herkese açık vitrini besler.
   tesisTuru: r.tesis_turu || "", sehir: r.sehir || "", ilce: r.ilce || "",
@@ -581,6 +582,13 @@ export async function fetchPhoneTapCounts() {
   for (const r of data || []) { const k = String(r.listing_id); map[k] = (map[k] || 0) + 1; }
   return map;
 }
+// Admin Pano analitiği: TÜM dokunuş satırları (RLS admin'e hepsini döndürür).
+// Aggregation istemcide yapılır — "bugün/7 gün arama" + "en çok arananlar".
+export async function fetchPhoneTapStats() {
+  const { data, error } = await supabase.from("phone_taps").select("listing_id, created_at");
+  if (error) throw error;
+  return (data || []).map((r) => ({ listingId: r.listing_id, createdAt: r.created_at }));
+}
 
 // ── Reports (şikayet) ───────────────────────────────────────
 export async function addReport({ type, targetId, listingId, fromId, fromName, reason, description }) {
@@ -629,6 +637,30 @@ export async function adminUpdateProfile(userId, patch) {
     throw new Error("Yetki yok ya da kayıt güncellenemedi (RLS). Admin oturumunu kontrol et.");
   }
 }
+// ── Admin CRM notu (admin_notes, RLS: yalnız is_admin) ───────
+// Üye kartına satış/onboarding notu + "sonraki arama" tarihi.
+export async function fetchAdminNotes() {
+  const { data, error } = await supabase.from("admin_notes").select("*");
+  if (error) throw error;
+  const map = {};
+  for (const r of data || []) map[String(r.user_id)] = { note: r.note || "", nextCall: r.next_call || "" };
+  return map;
+}
+export async function saveAdminNote(userId, { note, nextCall }) {
+  const { data, error } = await supabase.from("admin_notes").upsert(
+    { user_id: userId, note: note || "", next_call: nextCall || null, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" }
+  ).select("user_id");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("Not kaydedilemedi (yetki yok).");
+}
+// Hesap silme kaydı (deleted_accounts, PII'siz) — Pano churn göstergesi.
+export async function fetchDeletedAccounts() {
+  const { data, error } = await supabase.from("deleted_accounts").select("*").order("deleted_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((r) => ({ id: r.id, role: r.role || "", deletedAt: r.deleted_at }));
+}
+
 export async function updateDocStatus(docId, status) {
   const { data, error } = await supabase.from("docs").update({ status }).eq("id", docId).select("id");
   if (error) throw error;

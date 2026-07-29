@@ -10,6 +10,7 @@ import {
   loadNotifPrefs, saveNotifPrefs, loadFleet, saveFleet, loadMolaPosts, saveMolaPosts,
   loadMolaThreads, saveMolaThreads, loadMolaReplies, saveMolaReplies,
   loadAuthReturn, saveAuthReturn, clearAuthReturn, loadPhoneTaps, savePhoneTaps,
+  loadAdminNotes, saveAdminNotes,
   loadProfileCache, saveProfileCache, clearProfileCache, loadKeepSession,
 } from "./utils/storage";
 import { visibleReviewsFor } from "./utils/reviewGate";
@@ -403,6 +404,28 @@ function AppShell() {
   // zaten herkesi içerir, o yüzden adminDocs = docs.
   const [adminDocs, setAdminDocs] = useState([]);
   const allDocs = SB ? adminDocs : docs;
+  // ── Admin 1.0.2 paketi: CRM notları + Pano analitiği + silme kaydı ──
+  // adminNotes: { [userId]: {note, nextCall} } — SB: admin_notes tablosu, yerel: hamted_admin_notes.
+  const [adminNotes, setAdminNotes] = useState(() => (SB ? {} : loadAdminNotes()));
+  // tapStats: [{listingId, createdAt}] — SB'de tüm dokunuşlar (admin RLS);
+  // yerel modda sayaç haritasından tarihsiz satırlara açılır (Pano top-5 çalışır).
+  const [tapStats, setTapStats] = useState([]);
+  const [deletedAccounts, setDeletedAccounts] = useState([]); // SB-only; yerel modda silme kaydı yok
+  const saveAdminNote = async (userId, data) => {
+    const next = { ...adminNotes, [String(userId)]: { note: data.note || "", nextCall: data.nextCall || "" } };
+    if (SB) {
+      try { await api.saveAdminNote(userId, data); }
+      catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Not kaydedilemedi.") }; }
+    } else {
+      saveAdminNotes(next);
+    }
+    setAdminNotes(next);
+    return { ok: true };
+  };
+  // Yerel modda tarih bilgisi yok: sayaç haritası tarihsiz satırlara açılır
+  // (Pano top-5 ve toplam çalışır; bugün/7 gün kartı yalnız SB'de doludur).
+  const adminTapStats = SB ? tapStats
+    : Object.entries(phoneTaps).flatMap(([lid, n]) => Array.from({ length: Number(n) || 0 }, () => ({ listingId: lid, createdAt: null })));
   const addDoc = async (d) => {
     if (SB) {
       try { const saved = await api.addDoc({ ...d, ownerId: (profile || user)?.id }); setDocs(prev => [{ ...d, ...saved, ownerId: (profile || user)?.id }, ...prev]); return { ok: true }; }
@@ -749,6 +772,10 @@ function AppShell() {
     api.fetchAllReports().then(setReports).catch((e) => console.error(e));
     // Admin belge doğrulaması: TÜM kullanıcıların belgeleri (kendi docs state'i yetmez).
     api.fetchAllDocs().then(setAdminDocs).catch((e) => console.error(e));
+    // Admin 1.0.2: Pano analitiği + CRM notları + silme kaydı (tablo yoksa sessizce boş).
+    api.fetchPhoneTapStats().then(setTapStats).catch(() => {});
+    api.fetchAdminNotes().then(setAdminNotes).catch(() => {});
+    api.fetchDeletedAccounts().then(setDeletedAccounts).catch(() => {});
     // user yerine id+email yeterli (isAdmin yalnizca bunlara bakar).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [SB, user?.id, user?.email]);
@@ -1080,7 +1107,7 @@ function AppShell() {
                 <Route path="/mesajlar" element={<PageTransition><MesajlarPage user={user} listings={listings} offers={offers} messages={messages} onSendMessage={addMessage} onRequireAuth={requireAuth} onSeen={markMessagesSeen} onMarkThreadRead={markThreadRead} getContact={getContact} msgSeen={msgSeen} blockedIds={myBlocked} onReport={addReport} onToggleBlock={toggleBlock} /></PageTransition>} />
                 <Route path="/profil" element={<PageTransition><ProfilPage user={user} onUpdateProfile={updateProfile} onRequireAuth={requireAuth} onLogout={logout} onDeleteAccount={deleteAccount} reviews={reviews} getUserRating={getUserRating} listings={listings} offers={offers} docs={docs.filter(d => user && String(d.ownerId) === String(user.id))} onAddDoc={addDoc} onRemoveDoc={removeDoc} notifPrefs={notifPrefs} onUpdateNotifPrefs={updateNotifPrefs} onReport={addReport} blockedIds={myBlocked} onToggleBlock={toggleBlock} getContact={getContact} /></PageTransition>} />
                 <Route path="/panel" element={<PageTransition><DashboardPage user={user} listings={listings} offers={offers} messages={messages} onRequireAuth={requireAuth} /></PageTransition>} />
-                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} /></PageTransition>} />
+                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} adminNotes={adminNotes} onSaveAdminNote={saveAdminNote} tapStats={adminTapStats} deletedAccounts={deletedAccounts} /></PageTransition>} />
                 <Route path="/muteahhit" element={<PageTransition><MuteahhitPage /></PageTransition>} />
                 <Route path="/tedarikci" element={<PageTransition><TedarikciPage /></PageTransition>} />
                 <Route path="/satici/:id" element={<PageTransition><SaticiProfilPage user={user} users={users} listings={listings} offers={offers} reviews={reviews} getUserRating={getUserRating} onReport={addReport} /></PageTransition>} />

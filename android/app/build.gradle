@@ -1,8 +1,8 @@
-apply plugin: 'com.android.application'
+﻿apply plugin: 'com.android.application'
 
-// ── İmzalama: android/keystore.properties varsa release imzalanır ──
-// Bu dosya .gitignore'da (asla commit edilmez). Yoksa release imzasız kalır
-// (debug imzasıyla derlenir) ve derleme bozulmaz. Şablon: keystore.properties.example
+// â”€â”€ Ä°mzalama: android/keystore.properties varsa release imzalanÄ±r â”€â”€
+// Bu dosya .gitignore'da (asla commit edilmez). Yoksa release imzasÄ±z kalÄ±r
+// (debug imzasÄ±yla derlenir) ve derleme bozulmaz. Åablon: keystore.properties.example
 def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
 def hasKeystore = keystorePropertiesFile.exists()
@@ -18,7 +18,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 2
-        versionName "1.0.1"
+        versionName "1.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -40,7 +40,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            // Keystore varsa release imzalanır; yoksa imzasız (debug) kalır.
+            // Keystore varsa release imzalanÄ±r; yoksa imzasÄ±z (debug) kalÄ±r.
             if (hasKeystore) {
                 signingConfig signingConfigs.release
             }

@@ -107,6 +107,10 @@ export const clearAuthReturn = () => saveStr("hamted_auth_return", "");
 // SB modunda phone_taps tablosuna yazılır (api.logPhoneTap).
 export const loadPhoneTaps = () => load("hamted_phone_taps", {});
 export const savePhoneTaps = (v) => save("hamted_phone_taps", v);
+// Admin CRM notlari (yalniz localStorage modu) — { [userId]: {note, nextCall} }.
+// SB modunda admin_notes tablosuna yazilir (api.saveAdminNote).
+export const loadAdminNotes = () => load("hamted_admin_notes", {});
+export const saveAdminNotes = (v) => save("hamted_admin_notes", v);
 // Admin denetim kaydi (audit log) — kim, ne zaman, ne yapti.
 export const loadAuditLog = () => load("hamted_audit_log", []);
 export const appendAudit = (entry) => {

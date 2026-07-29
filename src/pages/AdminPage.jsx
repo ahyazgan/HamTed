@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Shield, Lock, Ban, Flag, FileText, FileCheck2, Trash2, Eye, CheckCircle2, X, Check, Smartphone, Fuel, Scale, AlertTriangle, ScrollText } from "lucide-react";
+import { Shield, Lock, Ban, Flag, FileText, FileCheck2, Trash2, Eye, CheckCircle2, X, Check, Smartphone, Fuel, Scale, AlertTriangle, ScrollText, Activity, Phone, StickyNote, UserX } from "lucide-react";
 import { loadPricingConfig, savePricingConfig } from "../utils/storage";
 import { seasonFactor } from "../utils/priceEstimate";
 import { fmtTL } from "../utils/payments";
@@ -38,7 +38,15 @@ const fmt = (iso) => { try { return new Date(iso).toLocaleString("tr-TR", { day:
 
 const shortId = (id) => "YKL-" + String(id ?? "").slice(-4).toUpperCase().padStart(4, "0");
 
-const TABS = [["reports", "Şikayet"], ["disputes", "İtiraz"], ["listings", "İlan"], ["announce", "Duyuru"], ["users", "Üye"], ["docs", "Belge"], ["pricing", "Finans"], ["audit", "Kayıt"]];
+const TABS = [["pulse", "Pano"], ["reports", "Şikayet"], ["disputes", "İtiraz"], ["listings", "İlan"], ["announce", "Duyuru"], ["users", "Üye"], ["docs", "Belge"], ["pricing", "Finans"], ["audit", "Kayıt"]];
+
+// "Son N gün içinde mi?" — tarihi olmayan satırlar (yerel mod tap'leri) sayılmaz.
+const DAY = 86400000;
+const within = (iso, days) => {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) && Date.now() - t < days * DAY;
+};
 
 const PAY_BADGE = {
   bloke: { label: "EMANETTE", bg: "#FACC15", fg: "#0A0A0A" },
@@ -68,7 +76,7 @@ const btnBase = {
   letterSpacing: "-0.01em", lineHeight: 1, whiteSpace: "nowrap",
 };
 
-export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement }) {
+export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [] }) {
   const navigate = useNavigate();
   const toast = useToast();
   // Admin kullanıcı işlemi sarmalayıcı: sonucu kontrol et, hatayı toast ile göster.
@@ -77,7 +85,20 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
     if (res && res.ok === false) { toast?.(res.error || "İşlem başarısız", "error"); return; }
     toast?.(okMsg, "success");
   };
-  const [tab, setTab] = useState("reports");
+  const [tab, setTab] = useState("pulse");
+  // CRM notu: hangi üyenin not alanı açık + taslak (kaydedilene dek yerel).
+  const [noteOpen, setNoteOpen] = useState(null);
+  const [noteDraft, setNoteDraft] = useState({ note: "", nextCall: "" });
+  const openNote = (u) => {
+    const cur = adminNotes[String(u.id)] || {};
+    setNoteDraft({ note: cur.note || "", nextCall: cur.nextCall || "" });
+    setNoteOpen(String(u.id));
+  };
+  const saveNote = async (u) => {
+    const res = await onSaveAdminNote?.(u.id, noteDraft);
+    if (res && res.ok === false) { toast?.(res.error || "Not kaydedilemedi", "error"); return; }
+    toast?.("Not kaydedildi", "success"); setNoteOpen(null);
+  };
   const [fuelIndex, setFuelIndex] = useState(() => loadPricingConfig().fuelIndex || 1.0);
   const [feeRate, setFeeRate] = useState(() => loadPricingConfig().feeRate ?? 0.10);
   const [fuelSaved, setFuelSaved] = useState(false);
@@ -225,11 +246,120 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
           })}
         </div>
 
+        {/* ── PANO: operasyon nabzı + arama analitiği ── */}
+        {tab === "pulse" && (() => {
+          const stat = (arr, get) => ({ today: arr.filter((x) => within(get(x), 1)).length, week: arr.filter((x) => within(get(x), 7)).length });
+          const mUye = stat(users, (u) => u.createdAt);
+          const mIlan = stat(listings, (l) => l.createdAt);
+          const kabul = offers.filter((o) => o.status === "kabul");
+          const mEs = stat(kabul, (o) => o.updatedAt || o.createdAt);
+          const mTap = stat(tapStats, (t) => t.createdAt);
+          // İlan başına arama + teklif sayıları (top-5 ve boşluk sinyali için).
+          const tapsBy = {}; tapStats.forEach((t) => { const k = String(t.listingId); tapsBy[k] = (tapsBy[k] || 0) + 1; });
+          const offersBy = {}; offers.forEach((o) => { const k = String(o.listingId); offersBy[k] = (offersBy[k] || 0) + 1; });
+          const top = Object.entries(tapsBy).sort((a, b) => b[1] - a[1]).slice(0, 5);
+          const gaps = listings.filter((l) => l.status === "aktif" && l.createdAt && !within(l.createdAt, 3) && !offersBy[String(l.id)] && !tapsBy[String(l.id)]).slice(0, 5);
+          const silinen30 = deletedAccounts.filter((d) => within(d.deletedAt, 30)).length;
+          // CRM: "sonraki arama" bugüne/geçmişe düşen üyeler.
+          const bugunSonu = new Date(); bugunSonu.setHours(23, 59, 59, 999);
+          const aranacak = users.filter((u) => { const nc = adminNotes[String(u.id)]?.nextCall; return nc && new Date(nc) <= bugunSonu; }).slice(0, 5);
+          const KARTLAR = [
+            { label: "Yeni Üye", ...mUye },
+            { label: "Yeni İlan", ...mIlan },
+            { label: "Eşleşme", ...mEs, green: true },
+            { label: "Arama", ...mTap },
+          ];
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* bugün / 7 gün kartları */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 9 }}>
+                {KARTLAR.map((k) => (
+                  <div key={k.label} style={{ background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 12px", boxShadow: "3px 3px 0 rgba(10,10,10,.12)" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+                      <span style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, lineHeight: 1, color: k.green ? C.green : C.ink }}>{k.today}</span>
+                      <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.muted }}>bugün</span>
+                    </div>
+                    <div style={{ fontFamily: MONO, fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.muted, marginTop: 6 }}>{k.label} · 7g: {k.week}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* silinen hesap (30 gün) */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: silinen30 ? "#FDECEC" : C.stone, border: `2px solid ${silinen30 ? C.red : C.border}`, borderRadius: 6, padding: "10px 13px" }}>
+                <UserX size={16} color={silinen30 ? C.red : C.muted} strokeWidth={2.4} />
+                <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: silinen30 ? C.red : C.sub }}>Silinen hesap (30 gün): {silinen30}</span>
+              </div>
+
+              {/* aranacaklar (CRM sonraki arama) */}
+              {aranacak.length > 0 && (
+                <div>
+                  <div style={{ fontFamily: HEAD, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.01em", color: C.ink, margin: "2px 0 9px" }}>Bugün Aranacaklar</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {aranacak.map((u) => (
+                      <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `2px solid ${C.yellow}`, borderRadius: 6, padding: "9px 12px", boxShadow: "3px 3px 0 #FACC15" }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 800, textTransform: "uppercase", color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
+                          <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginTop: 2 }}>{adminNotes[String(u.id)]?.nextCall} · {adminNotes[String(u.id)]?.note?.slice(0, 40) || "not yok"}</div>
+                        </div>
+                        {u.phone && (
+                          <a href={`tel:${u.phone}`} style={{ ...btnBase, textDecoration: "none", background: C.green, color: "#fff", padding: "8px 10px" }}>
+                            <Phone size={12} strokeWidth={2.6} /> Ara
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* en çok arananlar */}
+              <div>
+                <div style={{ fontFamily: HEAD, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.01em", color: C.ink, margin: "2px 0 9px" }}>En Çok Arananlar</div>
+                {top.length === 0 ? <Empty icon={Phone} text="Henüz arama kaydı yok." /> : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {top.map(([lid, n], i) => (
+                      <div key={lid} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "9px 12px", boxShadow: "3px 3px 0 rgba(10,10,10,.10)" }}>
+                        <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 4, background: i === 0 ? C.yellow : C.stone, border: `2px solid ${C.ink}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.ink }}>{i + 1}</span>
+                        <span style={{ flex: 1, minWidth: 0, fontFamily: BODY, fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titleOf(lid)}</span>
+                        <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.green, flexShrink: 0 }}>{n} arama</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* boşluk sinyali: 3+ gündür aktif, 0 teklif + 0 arama */}
+              <div>
+                <div style={{ fontFamily: HEAD, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.01em", color: C.ink, margin: "2px 0 4px" }}>Boşluk Sinyali</div>
+                <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginBottom: 9 }}>3+ gündür açık, hiç teklif/arama almamış ilanlar — karşı taraf onboard edilmeli.</div>
+                {gaps.length === 0 ? <Empty icon={CheckCircle2} text="Boşluk yok — tüm aktif ilanlar ilgi görüyor." /> : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {gaps.map((l) => (
+                      <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `2px solid ${C.red}`, borderRadius: 6, padding: "9px 12px" }}>
+                        <AlertTriangle size={14} color={C.red} strokeWidth={2.4} style={{ flexShrink: 0 }} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontFamily: BODY, fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title || ("#" + l.id)}</div>
+                          <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginTop: 2 }}>{l.cat === "hafriyat" ? "Hafriyat" : "Silobas"} · {l.il || "—"} · {l.owner || "—"}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── ŞİKAYETLER ── */}
         {tab === "reports" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
             {reports.length === 0 ? <Empty icon={Flag} text="Şikayet yok." /> : reports.map((r) => {
               const st = REPORT_STATUS[r.status] || REPORT_STATUS.acik;
+              // Hızlı aksiyon hedefleri: şikayete konu ilan / üye (backend hazır, tek dokunuş).
+              const rl = r.listingId ? listings.find((l) => String(l.id) === String(r.listingId)) : null;
+              const rlHidden = rl?.status === "kapali";
+              const ru = r.type === "user" && r.targetId ? users.find((u) => String(u.id) === String(r.targetId)) : null;
+              const ruBanned = ru?.status === "banli";
               return (
                 <div key={r.id} style={{ background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 14, boxShadow: "3px 3px 0 rgba(10,10,10,.12)" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
@@ -246,9 +376,16 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                     <div style={{ fontFamily: MONO, fontSize: 11, color: C.muted, marginTop: 7 }}>İlgili ilan: {titleOf(r.listingId)}</div>
                   )}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 12 }}>
-                    {r.listingId && (
-                      <button onClick={() => onSetReportStatus?.(r.id, "inceleniyor")} style={{ ...btnBase, background: C.red, color: "#fff" }}>
-                        <Trash2 size={13} strokeWidth={2.4} /> İlanı Kaldır
+                    {rl && (
+                      <button onClick={() => { onUpdateListing?.(rl.id, { status: rlHidden ? "aktif" : "kapali" }); onLog?.("listing", `Şikayet ${shortId(r.id)}: "${rl.title || rl.id}" ${rlHidden ? "yayına alındı" : "GİZLENDİ"}`); toast?.(rlHidden ? "İlan yayına alındı" : "İlan gizlendi", "success"); }}
+                        style={{ ...btnBase, background: rlHidden ? C.green : C.red, color: "#fff" }}>
+                        {rlHidden ? <Eye size={13} strokeWidth={2.4} /> : <Trash2 size={13} strokeWidth={2.4} />} {rlHidden ? "İlanı Yayınla" : "İlanı Gizle"}
+                      </button>
+                    )}
+                    {ru && (
+                      <button onClick={() => { doUserAction(ru.id, { status: ruBanned ? "aktif" : "banli" }, ruBanned ? "Ban kaldırıldı" : "Üye banlandı"); onLog?.("user", `Şikayet ${shortId(r.id)}: ${ru.name} ${ruBanned ? "banı kaldırıldı" : "BANLANDI"}`); }}
+                        style={{ ...btnBase, background: ruBanned ? C.green : C.red, color: "#fff" }}>
+                        <Ban size={13} strokeWidth={2.4} /> {ruBanned ? "Banı Kaldır" : "Üyeyi Banla"}
                       </button>
                     )}
                     <button onClick={() => onSetReportStatus?.(r.id, "inceleniyor")} style={btnBase}>
@@ -478,7 +615,33 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                       style={{ ...btnBase, background: banned ? C.green : C.red, color: "#fff", border: `2px solid ${C.ink}` }}>
                       <Ban size={12} strokeWidth={2.6} /> {banned ? "Banı kaldır" : "Banla"}
                     </button>
+                    {u.phone && (
+                      <a href={`tel:${u.phone}`} style={{ ...btnBase, textDecoration: "none", background: C.green, color: "#fff" }}>
+                        <Phone size={12} strokeWidth={2.6} /> Ara
+                      </a>
+                    )}
+                    <button onClick={() => (noteOpen === String(u.id) ? setNoteOpen(null) : openNote(u))}
+                      style={{ ...btnBase, background: adminNotes[String(u.id)]?.note || adminNotes[String(u.id)]?.nextCall ? C.yellow : C.card }}>
+                      <StickyNote size={12} strokeWidth={2.4} /> Not
+                    </button>
                   </div>
+                  {/* CRM notu: satış/onboarding notu + sonraki arama tarihi (yalnız admin görür) */}
+                  {noteOpen === String(u.id) && (
+                    <div style={{ marginTop: 10, background: C.stone, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 12, display: "flex", flexDirection: "column", gap: 9 }}>
+                      <textarea value={noteDraft.note} onChange={(e) => setNoteDraft((d) => ({ ...d, note: e.target.value }))} maxLength={500}
+                        placeholder="Görüşme notu: kim, ne konuşuldu, ne söz verildi…"
+                        style={{ width: "100%", boxSizing: "border-box", minHeight: 64, resize: "vertical", background: C.card, border: `2px solid ${C.ink}`, borderRadius: 5, padding: "9px 11px", fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.ink, outline: "none" }} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <label style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.sub, flexShrink: 0 }}>Sonraki arama</label>
+                        <input type="date" value={noteDraft.nextCall} onChange={(e) => setNoteDraft((d) => ({ ...d, nextCall: e.target.value }))}
+                          style={{ flex: 1, background: C.card, border: `2px solid ${C.ink}`, borderRadius: 5, padding: "7px 9px", fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.ink, outline: "none" }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => saveNote(u)} style={{ ...btnBase, flex: 1, justifyContent: "center", background: C.ink, color: C.yellow }}>Kaydet</button>
+                        <button onClick={() => setNoteOpen(null)} style={{ ...btnBase, justifyContent: "center" }}>Vazgeç</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -606,7 +769,23 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
           </div>
         )}
 
-        {/* ── DENETİM KAYDI (AUDIT LOG) ── */}
+        {/* ── DENETİM KAYDI (AUDIT LOG) + silinen hesaplar ── */}
+        {tab === "audit" && deletedAccounts.length > 0 && (
+          <div style={{ background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 13, boxShadow: "3px 3px 0 rgba(10,10,10,.10)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+              <UserX size={14} color={C.red} strokeWidth={2.4} />
+              <span style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.01em", color: C.ink }}>Silinen Hesaplar (PII'siz)</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {deletedAccounts.slice(0, 20).map((d) => (
+                <div key={d.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: MONO, fontSize: 11, color: C.sub, borderBottom: `1px solid ${C.border}`, paddingBottom: 4 }}>
+                  <span style={{ fontWeight: 700, color: C.ink }}>{d.role || "rol yok"}</span>
+                  <span>{fmt(d.deletedAt)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {tab === "audit" && (
           audit.length === 0 ? <Empty icon={ScrollText} text="Henüz admin işlemi kaydedilmedi." /> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

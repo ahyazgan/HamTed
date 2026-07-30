@@ -141,12 +141,20 @@ function AppShell() {
   const [announcement, setAnnouncement] = useState(() => loadAnnouncement());
   useEffect(() => {
     if (!SB) return;
-    api.fetchAppConfig("announcement").then((v) => {
-      if (!v) return;                       // tablo/satır yok → yerel önbellek kalsın
-      const next = { active: false, text: "", tone: "promo", roles: [], iller: [], ...v };
-      setAnnouncement(next);
-      saveAnnouncement(next);
-    }).catch(() => {});
+    const cek = () => {
+      if (document.visibilityState === "hidden") return;
+      api.fetchAppConfig("announcement").then((v) => {
+        if (!v) return;                     // tablo/satır yok → yerel önbellek kalsın
+        const next = { active: false, text: "", tone: "promo", roles: [], iller: [], ...v };
+        setAnnouncement(next);
+        saveAnnouncement(next);
+      }).catch(() => {});
+    };
+    cek();
+    // Uygulama öne gelince tazele: yalnız mount'ta çekseydik, uygulamayı açık
+    // tutan üye admin'in yayınladığı (ya da kapattığı) duyuruyu hiç görmezdi.
+    document.addEventListener("visibilitychange", cek);
+    return () => document.removeEventListener("visibilitychange", cek);
   }, [SB]);
   const [blocked, setBlocked] = useState(() => loadBlocked()); // { [blockerId]: [engellenenId] }
   const allListings = SB ? userListings : [...userListings, ...LISTINGS];
@@ -815,9 +823,14 @@ function AppShell() {
   // Son giriş damgası: oturum açık kullanıcı uygulamayı her açtığında bir kez
   // dokunur (RPC 1 saatten yeni damgayı tekrar yazmaz). Admin "7 gündür girmemiş"
   // segmentini bundan üretir. Hata sessiz — akışı hiçbir koşulda bozmaz.
+  // ÖNE GELİNCE de dokunur: mobil uygulama günlerce kapatılmadan arka planda
+  // kalır; yalnız mount'ta damgalasaydık her gün kullanan üye "uyuyan" görünürdü.
   useEffect(() => {
     if (!SB || !user?.id) return;
-    api.touchLastSeen().catch(() => {});
+    const touch = () => { if (document.visibilityState === "visible") api.touchLastSeen().catch(() => {}); };
+    touch();
+    document.addEventListener("visibilitychange", touch);
+    return () => document.removeEventListener("visibilitychange", touch);
   }, [SB, user?.id]);
 
   // SB modunda admin giris yapinca moderasyon verisini yukle (profiller + sikayetler).

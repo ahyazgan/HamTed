@@ -15,7 +15,7 @@ import {
 import SEO from "../components/SEO";
 import Logo from "../components/Logo";
 import { LISTINGS } from "../data/listings";
-import { loadListings, loadOffers } from "../utils/storage";
+import { loadListings, loadOffers, loadAnnDismissed, saveAnnDismissed } from "../utils/storage";
 import { marketPulse, haversineKm } from "../utils/priceEstimate";
 import { loadsNearCity } from "../utils/backhaul";
 import { haulerCategory } from "../utils/haulerCategory";
@@ -985,8 +985,12 @@ export default function NakliyeHome({
   user, listings = [], offers = [], fleet = [], notifUnread = 0, onLoginClick, onUpdateProfile, announcement,
 }) {
   const navigate = useNavigate();
-  const [annDismissed, setAnnDismissed] = useState(false);
-  const ann = announcement?.active && announcement?.text && !annDismissed ? announcement : null;
+  // Duyuru kapatma KALICI (localStorage) — oturum-içi bayrak, alt bardan başka
+  // sekmeye geçip dönünce sıfırlanıyordu (Routes key={pathname} → unmount).
+  // Kimlik duyuru metni; admin yeni duyuru yayınlayınca bant tekrar açılır.
+  const annKey = announcement?.text ? String(announcement.text).slice(0, 120) : "";
+  const [annDismissedKey, setAnnDismissedKey] = useState(() => loadAnnDismissed());
+  const ann = announcement?.active && announcement?.text && annDismissedKey !== annKey ? announcement : null;
   const annStyle = ann ? ({
     promo: { bg: C.ink, fg: C.yellow, mark: "★" },
     info: { bg: C.yellow, fg: C.ink, mark: "i" },
@@ -1129,7 +1133,7 @@ export default function NakliyeHome({
           <div className="relative flex items-center gap-2.5 overflow-hidden" style={{ background: annStyle.bg, border: FRAME, borderRadius: 6, padding: "10px 12px", boxShadow: SHADOW_SM }}>
             <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center text-[13px] font-black" style={{ background: annStyle.fg, color: annStyle.bg, borderRadius: 5, fontFamily: ARCH }}>{annStyle.mark}</span>
             <span className="min-w-0 flex-1 text-[12px] font-bold leading-snug" style={{ color: annStyle.fg, fontFamily: MONO }}>{ann.text}</span>
-            <button onClick={() => setAnnDismissed(true)} aria-label="Kapat" className="flex-shrink-0 px-1 text-[16px] font-black leading-none" style={{ color: annStyle.fg, opacity: 0.7 }}>×</button>
+            <button onClick={() => { saveAnnDismissed(annKey); setAnnDismissedKey(annKey); }} aria-label="Kapat" className="flex-shrink-0 px-1 text-[16px] font-black leading-none" style={{ color: annStyle.fg, opacity: 0.7 }}>×</button>
           </div>
         </div>
       )}

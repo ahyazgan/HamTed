@@ -476,6 +476,11 @@ create policy offers_read on public.offers for select using (
   auth.uid() = from_user_id
   or auth.uid() = (select owner_id from public.listings l where l.id = listing_id)
 );
+-- ADMIN: tum teklifleri OKUR (panel sayaclari + "zaten teklif verdi" rozeti).
+-- Bu politika olmadan admin yalniz KENDI tekliflerini gorur ve panelin
+-- Teklif / Kabul % / Eslesme sayaclari sessizce yanlis cikar.
+drop policy if exists offers_admin_read on public.offers;
+create policy offers_admin_read on public.offers for select using (public.is_admin());
 create policy offers_insert on public.offers for insert with check (auth.uid() = from_user_id);
 create policy offers_update on public.offers for update using (
   auth.uid() = (select owner_id from public.listings l where l.id = listing_id)

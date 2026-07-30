@@ -98,6 +98,12 @@ export const savePricingConfig = (v) => save("hamted_pricing_config", v);
 // Ana sayfa duyuru / kampanya bandi (admin yonetir).
 export const loadAnnouncement = () => load("hamted_announcement", { active: false, text: "", tone: "promo" });
 export const saveAnnouncement = (v) => save("hamted_announcement", v);
+// Kapatilan duyurunun kimligi (metnin ilk 120 karakteri). Kapatma KALICI olmali:
+// oturum-ici bayrak, rota degisiminde bilesen unmount oldugu icin siliniyordu ve
+// "×" pratikte ise yaramiyordu. Admin YENI duyuru yayinlayinca kimlik degisir,
+// bant tekrar acilir — eskisi kapali kalir.
+export const loadAnnDismissed = () => load("hamted_ann_dismissed", "");
+export const saveAnnDismissed = (v) => save("hamted_ann_dismissed", v || "");
 // OAuth girişi tam sayfa yönlendirme yapar (web) — dönüşte kullanıcıyı
 // çıktığı sayfaya (örn. ilan detayı) geri götürmek için yol saklanır.
 export const loadAuthReturn = () => loadStr("hamted_auth_return", "");

@@ -21,8 +21,10 @@ create extension if not exists pg_net;
 create extension if not exists pg_cron;
 
 -- ── 1) METRİKLER — panonun gördüğü sayıların sunucu tarafı karşılığı ──
--- Admin panelden de çağrılabilir (RLS'siz güvenli: yalnız toplam sayı döner,
--- kişisel veri yok). Yine de yürütme yetkisi admin kontrolüne bağlıdır.
+-- YETKİ: HİÇBİR istemci rolüne açılmaz. SECURITY DEFINER olduğu için
+-- 'authenticated'a grant vermek, herhangi bir üyenin toplam üye/ilan/eşleşme/
+-- silinen hesap sayılarını konsoldan çekmesi demekti (2026-07-30'da kapatıldı).
+-- Cron işi postgres olarak çalıştığı için grant'e ihtiyaç duymaz.
 create or replace function public.admin_weekly_stats()
 returns jsonb language sql security definer set search_path = public as $$
   select jsonb_build_object(
@@ -44,8 +46,7 @@ returns jsonb language sql security definer set search_path = public as $$
     'silinen_30g',  (select count(*) from public.deleted_accounts where deleted_at > now() - interval '30 days')
   );
 $$;
-revoke all on function public.admin_weekly_stats() from public;
-grant execute on function public.admin_weekly_stats() to authenticated;
+revoke all on function public.admin_weekly_stats() from public, anon, authenticated;
 
 -- ── 2) E-POSTAYI GÖNDER (Resend) ────────────────────────────────────
 -- Anahtar + alıcı app_config'in 'resend' satırında durur. O satırın okuma

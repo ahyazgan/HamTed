@@ -55,11 +55,18 @@ const daysAgo = (iso) => {
   const t = new Date(iso).getTime();
   return Number.isFinite(t) ? Math.floor((Date.now() - t) / DAY) : null;
 };
-// "Son giriş" etiketi — last_seen migration'ı koşulmamışsa "—".
+// Aktiflik damgası: son giriş yoksa KAYIT tarihine düş. Migration 2026-07-29'da
+// koşulduğu için o ana kadarki tüm üyelerin last_seen'i boş — damgasızı "uyuyor"
+// saymak dünkü üyeyi bile kaçmış gösterirdi. Haftalık özet SQL'i de aynı
+// coalesce(last_seen, created_at) tanımını kullanır; ikisi tutarlı olmalı.
+const aktiflik = (u) => u?.lastSeen || u?.createdAt || null;
+// "Son giriş" etiketi — damga yoksa kayıt tarihiyle dürüst cümle kurar.
 const sonGorulme = (u) => {
   const d = daysAgo(u?.lastSeen);
-  if (d == null) return "giriş kaydı yok";
-  return d <= 0 ? "bugün girdi" : `${d} gün önce girdi`;
+  if (d != null) return d <= 0 ? "bugün girdi" : `${d} gün önce girdi`;
+  const k = daysAgo(u?.createdAt);
+  if (k == null) return "giriş kaydı yok";
+  return k <= 0 ? "bugün kaydoldu, henüz girmedi" : `${k} gün önce kaydoldu, giriş kaydı yok`;
 };
 const ROL_ETIKET = { isveren: "Alıcı", tedarikci: "Satıcı", nakliyeci: "Nakliyeci" };
 
@@ -341,7 +348,10 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
               {/* "Pano sayı verir, huni nerede tıkandığımızı verir." Likidite fazının asıl sorusu. */}
               {users.length > 0 && (() => {
                 const ilanAcan = new Set(listings.map((l) => String(l.ownerId)));
-                const eslesenIlan = listings.filter((l) => l.status === "eslesti" || l.status === "kapali");
+                // Eşleşme ölçütü: gerçekten bir nakliyeciye gitmiş ilan. Yalnız
+                // status='kapali'ye bakmak yanlıştı — admin bir ilanı GİZLEYİNCE de
+                // durum 'kapali' oluyor ve sahibi anında "eşleşti" sayılıyordu.
+                const eslesenIlan = listings.filter((l) => l.status === "eslesti" || Boolean(l.acceptedById));
                 const eslesenUye = new Set();
                 for (const l of eslesenIlan) {
                   eslesenUye.add(String(l.ownerId));
@@ -351,10 +361,18 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                 const nIlan = users.filter((u) => ilanAcan.has(String(u.id))).length;
                 const nEs = users.filter((u) => eslesenUye.has(String(u.id))).length;
                 const pct = (n) => (nKayit ? Math.round((n / nKayit) * 100) : 0);
+                // nEs, nIlan'ı GEÇEBİLİR: hiç ilan açmamış bir nakliyeci iş kabul
+                // edince eşleşmeye dokunmuş sayılır. Bu bir hata değil — huniyi
+                // "genişliyor" gibi göstermek yerine ayrı bir satırla açıkla.
+                const disaridanEslesen = Math.max(0, nEs - nIlan);
                 const ADIM = [
                   { label: "Kayıt oldu", n: nKayit, clr: C.ink },
                   { label: "İlan açtı", n: nIlan, clr: C.yellow, kayip: nKayit - nIlan, kayipLbl: "hiç ilan açmadı" },
-                  { label: "Eşleşti", n: nEs, clr: C.green, kayip: nIlan - nEs, kayipLbl: "ilan açtı ama eşleşmedi" },
+                  {
+                    label: "Eşleşti", n: nEs, clr: C.green,
+                    kayip: Math.max(0, nIlan - nEs), kayipLbl: "ilan açtı ama eşleşmedi",
+                    not: disaridanEslesen ? `${disaridanEslesen} kişi ilan açmadan iş aldı (kabul eden nakliyeci)` : "",
+                  },
                 ];
                 return (
                   <div>
@@ -372,6 +390,9 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                           </div>
                           {a.kayip > 0 && (
                             <div style={{ fontFamily: MONO, fontSize: 9.5, color: C.red, marginTop: 4 }}>↓ {a.kayip} üye {a.kayipLbl}</div>
+                          )}
+                          {a.not && (
+                            <div style={{ fontFamily: MONO, fontSize: 9.5, color: C.muted, marginTop: 4 }}>↗ {a.not}</div>
                           )}
                         </div>
                       ))}
@@ -468,7 +489,7 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
               if (hc === sel.cat) score += 3; else if (!hc) score += 1;
               if (ilUyum) score += 3;
               if (u.verified) score += 1;
-              if (within(u.lastSeen, 7)) score += 1;
+              if (within(aktiflik(u), 7)) score += 1;
               if (teklifVerdi) score -= 5;   // zaten teklif verdi, önce diğerlerini ara
               return { u, hc, ilUyum, teklifVerdi, score };
             })
@@ -693,7 +714,7 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                   Fiyatı/açıklaması/miktarı eksik ya da sahibinin telefonu olmayan AKTİF ilanlar. Ara, düzelttir, ilan işe yarasın.
                 </div>
               )}
-              {rows.length === 0 ? <Empty icon={FileText} text={onlyFlagged ? "Kuyruk temiz — eksik bilgili aktif ilan yok." : "İlan bulunamadı."} /> : rows.slice(0, 50).map((l) => {
+              {rows.length === 0 ? <Empty icon={FileText} text={!onlyFlagged ? "İlan bulunamadı." : fq ? "Aramaya uyan bayraklı ilan yok — aramayı temizle." : "Kuyruk temiz — eksik bilgili aktif ilan yok."} /> : rows.slice(0, 50).map((l) => {
                 const hidden = l.status === "kapali";
                 const flags = kaliteBayraklari(l, ownerById);
                 const owner = ownerById[String(l.ownerId)];
@@ -800,7 +821,7 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                       <>
                         <label style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.sub, display: "block", margin: "12px 0 6px" }}>HANGİ İL (boş = hepsi)</label>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                          {ilSecenek.slice(0, 20).map((il) => {
+                          {ilSecenek.map((il) => {
                             const on = iller.includes(il);
                             return (
                               <button key={il} onClick={() => setAnn((a) => ({ ...a, iller: toggleIn(a.iller, il) }))}
@@ -810,10 +831,16 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                         </div>
                       </>
                     )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10, background: C.stone, border: `2px solid ${C.border}`, borderRadius: 5, padding: "8px 11px" }}>
-                      <Target size={13} color={C.sub} strokeWidth={2.4} />
-                      <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.sub }}>
-                        {roles.length || iller.length ? `${erisim} üyeye görünür (hedefli — kayıtsız ziyaretçi görmez)` : `Herkese görünür — ${users.length || "tüm"} üye + ziyaretçiler`}
+                    {/* Erişim 0 ise SEBEBİNİ söyle: il seçenekleri ilan illerinden de üretiliyor,
+                        o ilde ilan olsa bile profiline şehir yazmış üye olmayabilir. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10, background: (roles.length || iller.length) && erisim === 0 ? "#FDECEC" : C.stone, border: `2px solid ${(roles.length || iller.length) && erisim === 0 ? C.red : C.border}`, borderRadius: 5, padding: "8px 11px" }}>
+                      <Target size={13} color={(roles.length || iller.length) && erisim === 0 ? C.red : C.sub} strokeWidth={2.4} />
+                      <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: (roles.length || iller.length) && erisim === 0 ? C.red : C.sub, lineHeight: 1.45 }}>
+                        {!(roles.length || iller.length)
+                          ? `Herkese görünür — ${users.length || "tüm"} üye + ziyaretçiler`
+                          : erisim === 0
+                            ? "Bu hedefte üye yok — duyuru KİMSEYE görünmez. (İl hedefi profilindeki şehre bakar; üyeler şehrini doldurmamış olabilir.)"
+                            : `${erisim} üyeye görünür (hedefli — kayıtsız ziyaretçi görmez)`}
                       </span>
                     </div>
                   </div>
@@ -851,18 +878,21 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
           const ilanAcanIds = new Set(listings.map((l) => String(l.ownerId)));
           const SEG = {
             hepsi: () => true,
-            uyuyan: (u) => !within(u.lastSeen, 7),
+            // Damgası olmayan üye "kaçmış" değildir: kayıt tarihine düşülür.
+            uyuyan: (u) => !within(aktiflik(u), 7),
             ilansiz: (u) => !ilanAcanIds.has(String(u.id)),
             eslesmemis: (u) => ilanAcanIds.has(String(u.id)) && !eslesmisIds.has(String(u.id)),
             telsiz: (u) => !isValidPhone(u.phone),
             banli: (u) => u.status === "banli",
           };
           const SEG_ETIKET = [["hepsi", "Hepsi"], ["uyuyan", "7g girmedi"], ["ilansiz", "İlan açmadı"], ["eslesmemis", "Eşleşmedi"], ["telsiz", "Telefonsuz"], ["banli", "Banlı"]];
-          const sayi = (k) => users.filter(SEG[k]).length;
-          const rows = users
-            .filter(SEG[uSeg] || SEG.hepsi)
+          // Çip sayıları rol filtresi + aramadan SONRAKİ küme üzerinden sayılır —
+          // aksi halde çipte 12 yazarken listede 3 satır çıkıyordu.
+          const havuz = users
             .filter((u) => uRole === "hepsi" || u.role === uRole)
             .filter((u) => !uq2 || `${u.name || ""} ${u.email || ""} ${u.phone || ""} ${u.sehir || ""}`.toLowerCase().includes(uq2));
+          const sayi = (k) => havuz.filter(SEG[k]).length;
+          const rows = havuz.filter(SEG[uSeg] || SEG.hepsi);
           return (
           <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
             {users.length > 0 && (
@@ -911,7 +941,7 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontFamily: HEAD, fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "-0.01em", color: C.ink, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
                       <div style={{ fontFamily: MONO, fontSize: 11, color: C.muted, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email} · {ROL_ETIKET[u.role] || "rolsüz"} · {nListings} ilan / {nOffers} teklif</div>
-                      <div style={{ fontFamily: MONO, fontSize: 10, color: within(u.lastSeen, 7) ? C.green : C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                      <div style={{ fontFamily: MONO, fontSize: 10, color: within(aktiflik(u), 7) ? C.green : C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
                         <Clock size={10} strokeWidth={2.6} /> {sonGorulme(u)}{u.sehir ? ` · ${u.sehir}` : ""}
                       </div>
                     </div>

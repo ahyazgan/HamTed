@@ -177,9 +177,14 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
   // Saha turunda ocak sahibi "sen gir benim yerime" diyor: admin formu üyenin
   // adına doldurur, ilan ÜYENİN olur (sahiplik, rol-tür kuralı, İlanlarım hep onda).
   // adina yoksa / admin değilsen davranış birebir eskisi gibi kalır.
-  const asUser = (!editing && sp.get("adina") && isAdmin(user))
-    ? users.find((u) => String(u.id) === String(sp.get("adina"))) || null
+  const adinaId = !editing ? sp.get("adina") : null;
+  const asUser = (adinaId && isAdmin(user))
+    ? users.find((u) => String(u.id) === String(adinaId)) || null
     : null;
+  // GÜVENLİK KAPISI: URL "adina" diyor ama hedef üye çözülemedi (sayfa doğrudan
+  // yenilendi → users henüz yüklenmemiş, ya da id yanlış/üye silinmiş). Sessizce
+  // normal akışa DÜŞME — ilan admin'in kendi adına açılır ve kimse fark etmez.
+  const adinaCozulemedi = Boolean(adinaId) && !asUser;
   // actor: ilanın SAHİBİ olacak kişi (normalde kullanıcının kendisi).
   const actor = asUser || user;
 
@@ -441,6 +446,21 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             <button onClick={onRequireAuth} style={{ background: C.ink, color: C.yellow, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 20px", cursor: "pointer" }}>Giriş yap / Kayıt ol</button>
             <button onClick={() => navigate("/ilanlar")} style={{ background: C.card, color: C.ink, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 20px", cursor: "pointer" }}>İlanlara dön</button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── gate: "adına ilan" hedefi çözülemedi ──
+  if (adinaCozulemedi) {
+    return (
+      <div style={{ ...shell, paddingBottom: 96 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "72px 24px 0", textAlign: "center" }}>
+          <h1 style={{ margin: 0, fontFamily: ARCH, fontSize: 20, fontWeight: 900, textTransform: "uppercase" }}>Üye bulunamadı</h1>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: C.sub }}>
+            Adına ilan açılacak üye çözülemedi. Bu sayfayı doğrudan açtıysan üye listesi henüz yüklenmemiş olabilir — panele dönüp üye kartındaki <b>Adına ilan ver</b> düğmesini kullan.
+          </p>
+          <button onClick={() => navigate("/admin")} style={{ background: C.ink, color: C.yellow, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 20px", cursor: "pointer" }}>Panele dön</button>
         </div>
       </div>
     );

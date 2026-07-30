@@ -338,7 +338,11 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       // NOT: recurring/recurringText SIFIRLANMAZ — data'daki gerçek seçim korunur
       // (aksi halde "Düzenli iş" seçimi yayında düşerdi; düzenleme akışıyla tutarlı).
       date: "",
-      owner: actor?.name || form.owner.trim(),
+      // Adına ilanda admin'in YAZDIĞI ad ilanda görünür: ocak sahibinin profil adı
+      // kişisel olabilir ("Mehmet Kaya") ama ilan firma adıyla çıkmalı
+      // ("Kaya Hafriyat"). Normal akışta davranış birebir eskisi gibi.
+      owner: (asUser && form.owner.trim()) || actor?.name || form.owner.trim(),
+      ownerNameOverride: (asUser && form.owner.trim()) || undefined,
       ownerId: actor?.id,
       ownerVerified: actor?.verified || false,
       ownerRating: actor?.rating || 5.0,
@@ -403,7 +407,11 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
     const listing = {
       id: newId(),
       ...data,
-      owner: actor?.name || form.owner.trim(),
+      // Adına ilanda admin'in YAZDIĞI ad ilanda görünür: ocak sahibinin profil adı
+      // kişisel olabilir ("Mehmet Kaya") ama ilan firma adıyla çıkmalı
+      // ("Kaya Hafriyat"). Normal akışta davranış birebir eskisi gibi.
+      owner: (asUser && form.owner.trim()) || actor?.name || form.owner.trim(),
+      ownerNameOverride: (asUser && form.owner.trim()) || undefined,
       ownerId: actor?.id,
       ownerVerified: actor?.verified || false,
       ownerRating: actor?.rating || 5.0,
@@ -792,6 +800,7 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             </Field>
             <Field label="Ad / Firma *">
               <input style={fieldBox} value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Örn: Aliağa Mıcır Ocağı" />
+              {asUser && <div style={{ fontFamily: MONO, fontSize: 10, color: C.sub, marginTop: 5, lineHeight: 1.45 }}>İlanda görünecek ad. Üyenin profil adı: <b>{asUser.name || "—"}</b></div>}
             </Field>
           </Block>
 
@@ -982,6 +991,7 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
                 Eklenecekse Mola'daki çoklu foto deseni kullanılabilir. */}
             <Field label="Ad / Firma *">
               <input style={fieldBox} value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Örn: Ertuğrul İnşaat" />
+              {asUser && <div style={{ fontFamily: MONO, fontSize: 10, color: C.sub, marginTop: 5, lineHeight: 1.45 }}>İlanda görünecek ad. Üyenin profil adı: <b>{asUser.name || "—"}</b></div>}
             </Field>
           </Block>
 

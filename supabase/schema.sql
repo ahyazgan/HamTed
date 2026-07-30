@@ -282,7 +282,11 @@ alter table public.messages enable row level security;
 drop policy if exists profiles_read   on public.profiles;
 drop policy if exists profiles_insert on public.profiles;
 drop policy if exists profiles_update on public.profiles;
-create policy profiles_read   on public.profiles for select using (true);
+-- GIZLILIK: profiles ANON anahtarla okunamaz. Tablo e-posta + telefon tutuyor;
+-- "using (true)" bunlari tek istekle toplanabilir yapiyordu (urun karari zaten
+-- "telefon yalniz uyeye gorunur"). Kayitsiz ziyaretcinin gordugu vitrin icin
+-- asagida profiles_public gorunumu var (blok 15). Admin: profiles_admin_all.
+create policy profiles_read   on public.profiles for select using (auth.uid() is not null);
 create policy profiles_insert on public.profiles for insert with check (auth.uid() = id);
 create policy profiles_update on public.profiles for update using (auth.uid() = id);
 
@@ -989,21 +993,42 @@ create policy deleted_accounts_admin_read on public.deleted_accounts
 --                       anahtarinda herkese acik; digerleri admin-ozel.
 --    listings_admin_insert : admin UYE ADINA ilan acabilsin (saha onboarding)
 -- ──────────────────────────────────────────────
-alter table public.profiles add column if not exists last_seen timestamptz;
-create index if not exists profiles_last_seen_idx on public.profiles (last_seen desc nulls last);
+-- SON GIRIS: profiles'ta DEGIL, admin-ozel ayri tabloda tutulur — uye baskasinin
+-- ne zaman girdigini gormesin (migration-2026-07-profil-gizlilik.sql).
+create table if not exists public.profile_activity (
+  user_id   uuid primary key references public.profiles(id) on delete cascade,
+  last_seen timestamptz not null default now()
+);
+alter table public.profile_activity enable row level security;
+drop policy if exists profile_activity_admin_read on public.profile_activity;
+create policy profile_activity_admin_read on public.profile_activity
+  for select using (public.is_admin());
 
 create or replace function public.touch_last_seen()
 returns void language plpgsql security definer set search_path = public as $$
 declare me uuid := auth.uid();
 begin
   if me is null then return; end if;
-  update public.profiles
-     set last_seen = now()
-   where id = me
-     and (last_seen is null or last_seen < now() - interval '1 hour');
+  insert into public.profile_activity (user_id, last_seen) values (me, now())
+  on conflict (user_id) do update
+    set last_seen = now()
+    where public.profile_activity.last_seen < now() - interval '1 hour';
 end; $$;
 revoke all on function public.touch_last_seen() from public;
 grant execute on function public.touch_last_seen() to authenticated;
+
+-- HERKESE ACIK VITRIN GORUNUMU: profiles_read artik uyeye kilitli oldugu icin
+-- kayitsiz ziyaretcinin /satici/:id vb. sayfalari bunu okur. security_invoker
+-- varsayilan (false) — gorunum sahibinin haklariyla calisir, RLS'i BILEREK asar
+-- ama yalniz asagidaki kolonlari verir. E-posta/telefon/vergi no/son giris YOK.
+drop view if exists public.profiles_public;
+create view public.profiles_public as
+  select id, name, role, verified, rating, status, created_at, logo,
+         tesis_turu, sehir, ilce, hakkinda, calisma_saatleri, malzemeler,
+         firma_turu, web, faaliyet_alani,
+         tasima_turu, filo_ozeti, hizmet_bolgeleri
+    from public.profiles;
+grant select on public.profiles_public to anon, authenticated;
 
 create table if not exists public.app_config (
   key        text primary key,
@@ -1022,3 +1047,32 @@ grant select on public.app_config to anon, authenticated;
 drop policy if exists listings_admin_insert on public.listings;
 create policy listings_admin_insert on public.listings
   for insert with check (public.is_admin());
+
+-- ──────────────────────────────────────────────
+-- 16) ILAN TURU <-> ROL KAPISI (migration-2026-07-ilan-tur-rol-guard.sql govdesi)
+--    Bu blok schema.sql'de EKSIKTI: dosya tek basina kosuldugunda taze bir
+--    veritabani rol kapisi olmadan aciliyordu (nakliyeci yuk ilani verebilirdi).
+--    Kural: nakliyeci -> yalniz 'arac', isveren -> yalniz 'is',
+--    tedarikci -> 'urun' + 'is' (onaylanan siparisin nakliyesini ayarlamak icin).
+--    Bos/bilinmeyen rol bilerek engellenmez (eski hesaplar kilitlenmesin); admin muaf.
+-- ──────────────────────────────────────────────
+create or replace function public.guard_listing_type_role()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare r text;
+begin
+  if public.is_admin() then return new; end if;
+  select role into r from public.profiles where id = new.owner_id;
+  if r = 'nakliyeci' and new.type is distinct from 'arac' then
+    raise exception 'Nakliyeci yalniz arac ilani verebilir';
+  elsif r = 'isveren' and new.type is distinct from 'is' then
+    raise exception 'Alici yalniz is (yuk) ilani verebilir';
+  elsif r = 'tedarikci' and new.type not in ('urun', 'is') then
+    raise exception 'Satici yalniz urun veya nakliye (is) ilani verebilir';
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists trg_guard_listing_type_role on public.listings;
+create trigger trg_guard_listing_type_role
+  before insert or update of type on public.listings
+  for each row execute function public.guard_listing_type_role();

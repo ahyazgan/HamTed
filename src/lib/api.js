@@ -98,7 +98,9 @@ const rowToProfile = (r) => r && ({
   phone: r.phone, phoneVerified: r.phone_verified, verified: r.verified, rating: r.rating,
   status: r.status || "aktif",
   createdAt: r.created_at,  // admin Pano "bugün/7 gün yeni üye" sayacı bundan okur
-  lastSeen: r.last_seen || null,  // son giriş — "7 gündür girmemiş" üye segmenti
+  // NOT: lastSeen burada YOK — son giriş damgası profiles'tan çıkarılıp admin-özel
+  // profile_activity tablosuna taşındı (üye başkasının giriş saatini görmesin).
+  // Admin panelinde users listesine App.jsx fetchLastSeenMap ile eklenir.
   logo: r.logo || "",   // firma logosu (Storage public URL)
   // Satıcı (tedarikçi) profil alanları — herkese açık vitrini besler.
   tesisTuru: r.tesis_turu || "", sehir: r.sehir || "", ilce: r.ilce || "",
@@ -308,7 +310,14 @@ export async function getProfile(userId) {
   // satir yoksa null doner. Boylece hydrate ag hatasini rol-yok sanip modal acmaz.
   const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
   if (error) { console.error("[getProfile]", error.message); throw error; }
-  return rowToProfile(data);
+  if (data) return rowToProfile(data);
+  // Satir gorunmuyor. Iki sebep olabilir: (a) profil gercekten yok, (b) KAYITSIZ
+  // ziyaretci baskasinin profilini okuyor — profiles artik yalniz uyeye acik
+  // (migration-2026-07-profil-gizlilik.sql). (b) durumunda satici/alici/nakliyeci
+  // VITRINI bos kalmasin diye herkese acik alt kumeye dus: profiles_public
+  // e-posta/telefon/vergi no/son giris ICERMEZ.
+  const { data: pub } = await supabase.from("profiles_public").select("*").eq("id", userId).maybeSingle();
+  return rowToProfile(pub);
 }
 
 export async function updateProfile(userId, patch) {
@@ -393,6 +402,16 @@ export async function touchLastSeen() {
   if (error) console.warn("[touchLastSeen]", error.message);
 }
 
+// Admin: { [userId]: sonGirisISO }. profile_activity RLS'i yalnız admin'e döndürür;
+// tablo yoksa (migration koşulmamış) sessizce boş harita → panel "giriş kaydı yok" der.
+export async function fetchLastSeenMap() {
+  const { data, error } = await supabase.from("profile_activity").select("user_id, last_seen");
+  if (error) { console.warn("[fetchLastSeenMap]", error.message); return {}; }
+  const map = {};
+  for (const r of data || []) map[String(r.user_id)] = r.last_seen;
+  return map;
+}
+
 // ── Uygulama ayarları (app_config) ───────────────────────────
 // Cihazlar arası paylaşılan ayar deposu. Şu anki tek anahtar: 'announcement'
 //   { active, text, tone, roles:[], iller:[] } — roles/iller boşsa herkese.
@@ -462,7 +481,9 @@ export async function createListing(data, profile) {
   const row = {
     ...listingToRow(data),
     owner_id: profile?.id ?? null,
-    owner_name: profile?.name || data.owner || "",
+    // ownerNameOverride: yalnız admin "adına ilan" akışında dolar — ilanda
+    // görünecek firma adı üyenin (kişisel olabilen) profil adının önüne geçer.
+    owner_name: data.ownerNameOverride || profile?.name || data.owner || "",
     owner_logo: profile?.logo || data.ownerLogo || "",   // logo snapshot (Storage URL)
     owner_verified: profile?.verified ?? false,
     owner_rating: profile?.rating ?? 5.0,

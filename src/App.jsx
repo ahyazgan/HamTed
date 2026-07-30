@@ -179,7 +179,7 @@ function AppShell() {
     }
     // Yerel modda sahip alanlarını da hedef üyeye çevir (SB'de createListing yapıyor).
     const rec = onBehalf
-      ? { ...listing, owner: onBehalf.name || "", ownerId: onBehalf.id, ownerVerified: Boolean(onBehalf.verified), ownerRating: onBehalf.rating || 5.0, ownerLogo: onBehalf.logo || "" }
+      ? { ...listing, owner: listing.ownerNameOverride || onBehalf.name || "", ownerId: onBehalf.id, ownerVerified: Boolean(onBehalf.verified), ownerRating: onBehalf.rating || 5.0, ownerLogo: onBehalf.logo || "" }
       : listing;
     setUserListings(prev => [rec, ...prev]);
     return rec;
@@ -837,7 +837,12 @@ function AppShell() {
   // RLS: bu sorgular yalnizca is_admin() icin doner.
   useEffect(() => {
     if (!SB || !isAdmin(user)) return;
-    api.fetchAllProfiles().then(setUsers).catch((e) => console.error(e));
+    // Profiller + son giriş damgaları AYRI tablolardan gelir (last_seen artık
+    // profiles'ta değil, admin-özel profile_activity'de) — birleştirip yazarız,
+    // böylece AdminPage yine tek bir u.lastSeen alanı görür.
+    Promise.all([api.fetchAllProfiles(), api.fetchLastSeenMap()])
+      .then(([profiller, seenMap]) => setUsers(profiller.map((u) => ({ ...u, lastSeen: seenMap[String(u.id)] || null }))))
+      .catch((e) => console.error(e));
     api.fetchAllReports().then(setReports).catch((e) => console.error(e));
     // Admin belge doğrulaması: TÜM kullanıcıların belgeleri (kendi docs state'i yetmez).
     api.fetchAllDocs().then(setAdminDocs).catch((e) => console.error(e));

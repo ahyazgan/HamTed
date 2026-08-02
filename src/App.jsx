@@ -1040,7 +1040,10 @@ function AppShell() {
     if (!SB || !id || contactCache[id] || fetchingContacts.current.has(String(id))) return;
     fetchingContacts.current.add(String(id));
     api.getProfile(id)
-      .then((p) => { if (p) setContactCache(prev => ({ ...prev, [id]: { name: p.name, phone: p.phone || "", email: p.email || "" } })); })
+      // publicOnly = kayıtsız ziyaretçiye dönen VİTRİN alt kümesi (telefon/e-posta yok).
+      // ÖNBELLEĞE YAZMA: aksi halde ziyaretçi ilan detayında numaraya dokunup giriş
+      // yapınca (SPA, sayfa yenilenmiyor) bayat boş numara kalıyor ve numara hiç açılmıyor.
+      .then((p) => { if (p && !p.publicOnly) setContactCache(prev => ({ ...prev, [id]: { name: p.name, phone: p.phone || "", email: p.email || "" } })); })
       .catch((e) => console.error(e))
       .finally(() => fetchingContacts.current.delete(String(id)));
   };

@@ -30,8 +30,11 @@ returns jsonb language sql security definer set search_path = public as $$
   select jsonb_build_object(
     'uye_toplam',   (select count(*) from public.profiles),
     'uye_yeni',     (select count(*) from public.profiles where created_at > now() - interval '7 days'),
-    'uye_uykuda',   (select count(*) from public.profiles
-                      where coalesce(last_seen, created_at) < now() - interval '7 days'),
+    -- son giris profiles'ta DEGIL: admin-ozel profile_activity tablosunda
+    -- (migration-2026-07-profil-gizlilik.sql). Damga yoksa kayit tarihine dus.
+    'uye_uykuda',   (select count(*) from public.profiles p
+                      where coalesce((select a.last_seen from public.profile_activity a where a.user_id = p.id),
+                                     p.created_at) < now() - interval '7 days'),
     'ilan_aktif',   (select count(*) from public.listings where status = 'aktif'),
     'ilan_yeni',    (select count(*) from public.listings where created_at > now() - interval '7 days'),
     'eslesme',      (select count(*) from public.offers
@@ -46,6 +49,8 @@ returns jsonb language sql security definer set search_path = public as $$
     'silinen_30g',  (select count(*) from public.deleted_accounts where deleted_at > now() - interval '30 days')
   );
 $$;
+-- anon DAHIL: Supabase public semadaki yeni fonksiyonlara anon'a DOGRUDAN
+-- execute yetkisi verir; yalniz PUBLIC'ten geri almak YETMEZ.
 revoke all on function public.admin_weekly_stats() from public, anon, authenticated;
 
 -- ── 2) E-POSTAYI GÖNDER (Resend) ────────────────────────────────────
@@ -101,7 +106,7 @@ begin
 
   return jsonb_build_object('ok', true, 'request_id', req, 'stats', s);
 end; $$;
-revoke all on function public.send_weekly_digest() from public;
+revoke all on function public.send_weekly_digest() from public, anon, authenticated;
 
 -- ── 3) ZAMANLAMA — her pazartesi 06:00 UTC (TR saatiyle 09:00) ──────
 select cron.unschedule('yuklet-haftalik-ozet')

@@ -783,10 +783,17 @@ function AppShell() {
       // Ayni kullanici icin en son bilinen dolu rolu koru (klobber engelle).
       const good = lastGoodProfileRef.current;
       const sameUser = good && String(good.id) === String(sbUser.id);
-      const useProf =
+      let useProf =
         (prof && prof.role) ? prof                                   // taze profil dolu -> kullan
         : (sameUser && good.role) ? good                             // taze bos ama eldeki dolu -> KORU
         : (prof || { id: sbUser.id, name: sbUser.email || "", role: "", phone: "" });
+      // E-POSTA HER ZAMAN OTURUMDAN GELSIN. isAdmin() e-postaya bakar; profil
+      // satiri okunamadiginda (bayat jeton -> RLS 0 satir) ya da yukaridaki
+      // yedek nesne kullanildiginda user.email BOS kaliyordu ve PLATFORM SAHIBI
+      // kendi yonetim panelinden sessizce ana sayfaya atiliyordu (AdminPage
+      // yetkisizi bilerek sessizce yonlendirir -> teshis de imkansizdi).
+      // sbUser.email jetondan gelir, profil okumasindan bagimsizdir.
+      useProf = { ...useProf, email: useProf.email || sbUser.email || "" };
       if (useProf.role) {
         lastGoodProfileRef.current = useProf; roleChosenRef.current = true;
         // Sonraki soguk acilis agsiz kurulsun — ama YALNIZ "oturumum acik

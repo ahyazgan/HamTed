@@ -7,7 +7,7 @@ import { fmtTL } from "../utils/payments";
 import SEO from "../components/SEO";
 import { useToast } from "../components/Toast";
 import { isSupabaseConfigured } from "../lib/supabase";
-import { isAdmin } from "../utils/admin";
+import { isAdmin, ADMIN_EMAILS } from "../utils/admin";
 import { haulerCategory } from "../utils/haulerCategory";
 import { isValidPhone } from "../lib/smsProvider";
 import { PAYMENTS_ENABLED } from "../config/features";
@@ -209,8 +209,8 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
             Kullanıcı no: <span style={{ fontSize: 10 }}>{String(user.id || "").slice(0, 8)}…</span>
           </div>
           <div style={{ marginTop: 14, background: C.stone, border: `2px solid ${C.border}`, borderRadius: 5, padding: "10px 12px", fontFamily: BODY, fontSize: 13, color: C.ink, lineHeight: 1.5 }}>
-            Yönetim paneli yalnızca <b>a.hakan_@hotmail.com</b> hesabına açıktır.
-            Yukarıdaki adres farklıysa çıkış yapıp o hesapla gir.
+            Yönetim paneli yalnızca şu hesaplara açıktır: <b>{ADMIN_EMAILS.join(", ")}</b>.
+            Yukarıdaki adres bunlardan biri değilse çıkış yapıp o hesapla gir.
             {!user.email && " E-posta BOŞ görünüyor — bu bir oturum sorunudur, çıkış yapıp tekrar gir."}
           </div>
         </div>

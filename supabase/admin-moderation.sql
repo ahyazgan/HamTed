@@ -12,7 +12,9 @@ security definer
 set search_path = public
 as $$
   select coalesce(
-    (select lower(email) = 'a.hakan_@hotmail.com' from auth.users where id = auth.uid()),
+    -- Platform sahibinin hesaplari. ISTEMCI ESLENIGI: src/utils/admin.js ADMIN_EMAILS.
+    (select lower(email) in ('a.hakan_@hotmail.com', 'ahyazgab@gmail.com')
+       from auth.users where id = auth.uid()),
     false
   );
 $$;

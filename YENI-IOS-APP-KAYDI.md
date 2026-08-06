@@ -57,7 +57,17 @@ Kod tarafı hazır (bu commit): Xcode projesi + codemagic.yaml + AASA
     otomatik olarak co.yuklet.app kaydına gider.
 
 ### 8. Gönderim
-- Yeni kayıtta sürüm **1.0.1** → build'i seç → Add for Review → Submit.
+- Yeni kayıtta sürüm **1.0.2** → build'i seç → Add for Review → Submit.
+  (Kaynak kod 1.0.2'de: `package.json`, `MARKETING_VERSION`, `app-version.json`.
+  Yeni kayıt olduğu için build numarası 1'den başlar, sorun değil.)
+
+### 9. Onaydan SONRA — unutulursa uygulama içi güncelleme linki kırık kalır
+- Yeni kaydın Apple ID'sini al (App Store Connect → App Information → Apple ID).
+- `public/app-version.json` içindeki `iosUrl` şu an ESKİ, artık yayında olmayan
+  kayda işaret ediyor (`id6787767256`). Yeni ID ile değiştir ve push et:
+  `"iosUrl": "https://apps.apple.com/app/id<YENI_ID>"`
+- Supabase → Authentication → URL Configuration: derin bağlantı/redirect
+  listesinde bir şey değişmedi, kontrol yeter.
 - Hesap silme, UGC şikayet/engel, konum izin metinleri vb. geçen incelemeden
   geçen kodun aynısı — hızlı onay beklenir (1-2 gün).
 

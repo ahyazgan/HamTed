@@ -770,8 +770,13 @@ function AppShell() {
       // bellekte zaten iyi profil varsa (lastGoodProfileRef) onbellege gerek yok.
       const cached = loadProfileCache();
       if (cached && cached.role && String(cached.id) === String(sbUser.id) && !lastGoodProfileRef.current) {
-        lastGoodProfileRef.current = cached; roleChosenRef.current = true;
-        setProfile(cached); setUser(cached);
+        // E-postayi burada da jetondan tamamla. Onbellek e-postasiz yazilmis
+        // olabilir (profil vitrin alt kumesinden gelmisse); bu hizli yol user'i
+        // ANINDA kurdugu icin AdminPage e-postasiz nesneyi gorup admin'i daha
+        // taze profil gelmeden ana sayfaya atiyordu — geri donusu de yok.
+        const c = { ...cached, email: cached.email || sbUser.email || "" };
+        lastGoodProfileRef.current = c; roleChosenRef.current = true;
+        setProfile(c); setUser(c);
         setAuthReady(true);
       }
       // getProfile: HATA (ag/RLS) firlatir, "satir yok" null doner — ikisi ayri durum.

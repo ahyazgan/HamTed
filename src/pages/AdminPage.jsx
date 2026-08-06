@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Shield, Lock, Ban, Flag, FileText, FileCheck2, Trash2, Eye, CheckCircle2, X, Check, Smartphone, Fuel, Scale, AlertTriangle, ScrollText, Activity, Phone, StickyNote, UserX, Link2, PlusCircle, Clock, Target } from "lucide-react";
 import { loadPricingConfig, savePricingConfig } from "../utils/storage";
 import { seasonFactor } from "../utils/priceEstimate";
@@ -116,6 +116,7 @@ const btnBase = {
 
 export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [] }) {
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
   const toast = useToast();
   // Admin kullanıcı işlemi sarmalayıcı: sonucu kontrol et, hatayı toast ile göster.
   const doUserAction = async (userId, patch, okMsg) => {
@@ -167,10 +168,17 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
 
   // Admin olmayan giriş yapmış kullanıcı: panelin varlığını ifşa etmeden
   // sessizce ana sayfaya yönlendir (kilit ekranı gösterme).
+  // TEŞHİS KAPISI: /admin?tani=1 ile gelindiğinde sessizce yönlendirme YAPMA,
+  // NEDEN reddedildiğini yaz. Sessiz yönlendirme paneli gizlemek için bilinçli
+  // bir karardı ama teşhisi de imkânsız kılıyordu: doğru e-postayla girdiğini
+  // sanan yönetici hiçbir ipucu görmeden ana sayfaya atılıyordu (birden fazla
+  // hesabı varsa hangisiyle girdiğini anlamanın yolu yok). Gizlilik korunur:
+  // yalnız bu parametre elle yazıldığında ve YALNIZ giriş yapmış kişiye görünür.
+  const tani = sp.get("tani") === "1";
   const blocked = Boolean(user) && !isAdmin(user);
   useEffect(() => {
-    if (blocked) navigate("/", { replace: true });
-  }, [blocked, navigate]);
+    if (blocked && !tani) navigate("/", { replace: true });
+  }, [blocked, tani, navigate]);
 
   // ── Gate: giriş yok ──
   if (!user) {
@@ -186,8 +194,30 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
     );
   }
 
-  // ── Gate: yetki yok → kilit ekranı gösterme, sessizce yönlendir (yukarıdaki effect) ──
-  if (blocked) return null;
+  // ── Gate: yetki yok → sessizce yönlendir; ?tani=1 ise nedenini yaz ──
+  if (blocked) {
+    if (!tani) return null;
+    return (
+      <div style={{ ...shell, padding: "48px 20px", gap: 14 }}>
+        <SEO title="Yönetim" />
+        <div style={{ background: C.card, border: `2px solid ${C.red}`, borderRadius: 6, padding: 16, boxShadow: "3px 3px 0 rgba(10,10,10,.12)" }}>
+          <h1 style={{ fontFamily: HEAD, fontSize: 17, fontWeight: 900, textTransform: "uppercase", color: C.ink, margin: "0 0 10px" }}>Bu hesap yönetici değil</h1>
+          <div style={{ fontFamily: MONO, fontSize: 12, color: C.sub, lineHeight: 1.7 }}>
+            Giriş yapılan e-posta:<br />
+            <b style={{ color: C.red, fontSize: 13, wordBreak: "break-all" }}>{user.email || "(e-posta boş!)"}</b><br /><br />
+            Rol: <b style={{ color: C.ink }}>{user.role || "(yok)"}</b><br />
+            Kullanıcı no: <span style={{ fontSize: 10 }}>{String(user.id || "").slice(0, 8)}…</span>
+          </div>
+          <div style={{ marginTop: 14, background: C.stone, border: `2px solid ${C.border}`, borderRadius: 5, padding: "10px 12px", fontFamily: BODY, fontSize: 13, color: C.ink, lineHeight: 1.5 }}>
+            Yönetim paneli yalnızca <b>a.hakan_@hotmail.com</b> hesabına açıktır.
+            Yukarıdaki adres farklıysa çıkış yapıp o hesapla gir.
+            {!user.email && " E-posta BOŞ görünüyor — bu bir oturum sorunudur, çıkış yapıp tekrar gir."}
+          </div>
+        </div>
+        <button onClick={() => navigate("/profil")} style={{ ...btnBase, justifyContent: "center", background: C.ink, color: C.yellow, padding: "13px 0", fontSize: 13 }}>Profile git (çıkış yapmak için)</button>
+      </div>
+    );
+  }
 
   const openReports = reports.filter((r) => r.status !== "kapali").length;
   const pendingDocs = docs.filter((d) => (d.status || "beklemede") === "beklemede").length;

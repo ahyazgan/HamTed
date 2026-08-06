@@ -316,6 +316,13 @@ export async function getProfile(userId) {
   // (migration-2026-07-profil-gizlilik.sql). (b) durumunda satici/alici/nakliyeci
   // VITRINI bos kalmasin diye herkese acik alt kumeye dus: profiles_public
   // e-posta/telefon/vergi no/son giris ICERMEZ.
+  // KENDI profilimiz icin ASLA vitrin alt kumesine dusme. profiles_public'te
+  // email/phone YOK; oysa admin kapisi (isAdmin e-postaya bakar) ve telefon
+  // kapisi bunlara bakar — eksik profil admin'i kendi panelinden SESSIZCE
+  // disari atardi. Kendi satirimiz gorunmuyorsa gercekten yoktur -> null.
+  const { data: sess } = await supabase.auth.getSession();
+  const meId = sess?.session?.user?.id;
+  if (meId && String(meId) === String(userId)) return null;
   // publicOnly: cagiran taraf bunun EKSIK bir profil oldugunu bilmeli — telefon
   // onbellegine yazilirsa uye giris yaptiktan sonra bile numara bos gorunur.
   const { data: pub } = await supabase.from("profiles_public").select("*").eq("id", userId).maybeSingle();

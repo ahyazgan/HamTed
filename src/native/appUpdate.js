@@ -6,8 +6,13 @@
 
 import { Capacitor } from "@capacitor/core";
 
-// Native versionName/CFBundleShortVersionString ile EŞ tutulmalı (Android + iOS = 1.0.1).
-export const APP_VERSION = "1.0.1";
+/* global __APP_VERSION__ */
+// Sürüm package.json'dan DERLEME ANINDA gömülür (vite.config.js define).
+// Eskiden burada elle yazılıydı ve 1.0.2 çıkışında güncellenmedi: cihaz
+// kendini 1.0.1 sanıyor, app-version.json "latest: 1.0.2" dediğinde ZATEN
+// güncel olan kullanıcıya "yeni sürüm var" uyarısı çıkabiliyordu.
+// package.json / iOS MARKETING_VERSION / Android versionName üçü eş olmalı.
+export const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
 
 // Uzak sürüm bildirimi. Örnek içerik için public/app-version.json'a bakın.
 const VERSION_URL = "https://yuklet.co/app-version.json";

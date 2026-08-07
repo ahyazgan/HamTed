@@ -1,7 +1,8 @@
 {
+  "_not": "latest'i ANCAK yeni surum magazada YAYINLANDIKTAN sonra artir. Once artirirsan mevcut kullanicilar 'guncelleme var' deyip magazada bulamaz. iosUrl: yeni co.yuklet.app kaydi onaylanana kadar siteye bakiyor; eski id6787767256 kaydi Private (custom app) oldugu icin herkese acik degil.",
   "latest": "1.0.2",
   "min": "1.0.0",
   "url": "https://yuklet.co",
   "androidUrl": "https://play.google.com/store/apps/details?id=com.yuklet.app",
-  "iosUrl": "https://apps.apple.com/app/id6787767256"
+  "iosUrl": "https://yuklet.co"
 }

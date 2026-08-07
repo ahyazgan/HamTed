@@ -536,7 +536,7 @@ function HaulerTypeCard({ onUpdateProfile }) {
 }
 
 /* ── NAKLİYECİ gövdesi ──────────────────────────────────────────────── */
-function NakliyeciBody({ nav, available, setAvailable, carrier, onUpdateProfile }) {
+function NakliyeciBody({ nav, available, onToggleAvailable, saving, carrier, onUpdateProfile }) {
   const backhaulCount = carrier?.backhaulCount || 0;
   const suitableJobs = carrier?.suitableJobs || [];
   const activeJobs = carrier?.activeJobs || [];
@@ -552,20 +552,31 @@ function NakliyeciBody({ nav, available, setAvailable, carrier, onUpdateProfile 
       {/* İlk giriş: taşıma türü sorusu (uygun yük filtrelemesi için) */}
       {carrier?.needsHaulerType && onUpdateProfile && <HaulerTypeCard onUpdateProfile={onUpdateProfile} />}
 
-      {/* müsaitlik anahtarı */}
+      {/* müsaitlik anahtarı — KALICI: profiles.available_until'e yazılır.
+          Eskiden yalnız useState idi (yenileyince sıfırlanıyor, panelde hiç
+          görünmüyordu). Artık "bugün boştayım" diyenler admin Eşleştir
+          sekmesinde en üste çıkar; arama listesi kendiliğinden oluşur. */}
       <div className="mb-5 flex items-center gap-2.5 p-3" style={{ background: C.card, border: FRAME, borderRadius: 6, boxShadow: SHADOW_SM }}>
         <span
-          className="h-2.5 w-2.5 rounded-full"
+          className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
           style={{ background: available ? C.green : C.faint, boxShadow: available ? "0 0 0 4px rgba(22,128,60,.18)" : "none" }}
         />
-        <div className="flex-1 text-[11px] font-bold uppercase" style={{ color: C.ink, fontFamily: MONO }}>
-          Aracım Müsait · İş Teklifi Al
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-bold uppercase" style={{ color: C.ink, fontFamily: MONO }}>
+            Aracım Müsait · İş Teklifi Al
+          </div>
+          <div className="mt-0.5 text-[9.5px] font-bold uppercase" style={{ color: available ? C.green : C.muted, fontFamily: MONO }}>
+            {saving ? "Kaydediliyor…" : available ? "Bugün 23:59'a kadar açık" : "Kapalı · iş önerilmez"}
+          </div>
         </div>
         <button
-          onClick={() => setAvailable((v) => !v)}
+          onClick={onToggleAvailable}
+          disabled={saving}
           aria-label="Müsaitlik"
-          className="relative h-7 w-[48px]"
-          style={{ background: available ? C.green : C.faint, border: FRAME, borderRadius: 14, transition: "background .15s" }}
+          role="switch"
+          aria-checked={available}
+          className="relative h-7 w-[48px] flex-shrink-0"
+          style={{ background: available ? C.green : C.faint, border: FRAME, borderRadius: 14, transition: "background .15s", opacity: saving ? 0.6 : 1 }}
         >
           <span
             className="absolute top-[2px] h-[20px] w-[20px]"
@@ -1161,7 +1172,7 @@ export default function NakliyeHome({
         {!user ? (
           <VisitorBody nav={navigate} recentJobs={recentJobs} />
         ) : role === "nakliyeci" ? (
-          <NakliyeciStateful navigate={navigate} carrier={carrier} onUpdateProfile={onUpdateProfile} />
+          <NakliyeciStateful navigate={navigate} user={user} carrier={carrier} onUpdateProfile={onUpdateProfile} />
         ) : role === "tedarikci" ? (
           <TedarikciBody nav={navigate} seller={seller} />
         ) : (
@@ -1219,8 +1230,24 @@ export default function NakliyeHome({
   );
 }
 
-/* müsaitlik state'i için ince sarmalayıcı (hook kuralları) */
-function NakliyeciStateful({ navigate, carrier, onUpdateProfile }) {
-  const [available, setAvailable] = useState(true);
-  return <NakliyeciBody nav={navigate} available={available} setAvailable={setAvailable} carrier={carrier} onUpdateProfile={onUpdateProfile} />;
+/* Müsaitlik sarmalayıcısı (hook kuralları).
+   Kaynak = profildeki available_until damgası; ekran state'i yalnızca
+   "yazma sürüyor" için tutulur. Damga GÜN SONUNA yazılır: nakliyeci
+   anahtarı kapatmayı unutsa bile ertesi gün kendiliğinden düşer, yani
+   panelde asla bayat "müsait" görünmez. */
+const gunSonu = () => { const d = new Date(); d.setHours(23, 59, 59, 999); return d.toISOString(); };
+const musaitMi = (u) => Boolean(u?.availableUntil) && new Date(u.availableUntil).getTime() > Date.now();
+
+function NakliyeciStateful({ navigate, user, carrier, onUpdateProfile }) {
+  const [saving, setSaving] = useState(false);
+  const available = musaitMi(user);
+  const onToggleAvailable = async () => {
+    if (saving || !onUpdateProfile) return;
+    setSaving(true);
+    // Sonuç kontrol edilir: ağ/RLS hatasında anahtar sahte "açık" görünmesin
+    // (profil state'i güncellenmediği için görünüm eski değerine geri döner).
+    try { await onUpdateProfile({ availableUntil: available ? null : gunSonu() }); }
+    finally { setSaving(false); }
+  };
+  return <NakliyeciBody nav={navigate} available={available} onToggleAvailable={onToggleAvailable} saving={saving} carrier={carrier} onUpdateProfile={onUpdateProfile} />;
 }

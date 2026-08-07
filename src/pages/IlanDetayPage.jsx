@@ -28,7 +28,7 @@ import { estimatePrice, fmtTL } from "../utils/priceEstimate";
 import { loadPricingConfig } from "../utils/storage";
 import { newId, nowIso } from "../utils/id";
 import { useToast } from "../components/Toast";
-import { shareUrl, listingShareUrl } from "../native/share";
+import { shareUrl, listingShareUrl, listingShareText, shareToWhatsApp } from "../native/share";
 import { openInMaps, openIosMap } from "../native/maps";
 import { hapticTap, hapticSuccess } from "../native/haptics";
 import useFavorites from "../hooks/useFavorites";
@@ -137,6 +137,25 @@ function DetailRow({ label, value }) {
   );
 }
 
+// ── Düzenli işin ÖNCELİK PENCERESİ ──────────────────────────────────
+// Tekrarlanan sevkiyatta yeni sefer, önceki seferi taşıyan nakliyeciye bir
+// süre ayrılır (switching cost = düzenli işin asıl değeri). Sunucu
+// (accept_job) bunu zaten uyguluyor; istemcide SEBEBİNİ görünür kılıyoruz —
+// aksi halde kabul düğmesi anlaşılmaz bir hatayla dönerdi.
+// Bileşen dışında: içinde saat okunuyor, render gövdesi saf kalmalı.
+function oncelikDurumu(l, user, isOwner) {
+  const until = l?.reservedUntil ? new Date(l.reservedUntil).getTime() : 0;
+  const kalan = until - Date.now();
+  const reservedActive = Boolean(l?.reservedForId) && kalan > 0;
+  const reservedForMe = reservedActive && Boolean(user) && String(l.reservedForId) === String(user.id);
+  return {
+    reservedActive,
+    reservedForMe,
+    reservedBlocked: reservedActive && !reservedForMe && !isOwner,
+    reservedSaat: reservedActive ? Math.max(1, Math.ceil(kalan / 3600000)) : 0,
+  };
+}
+
 export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], onRequireAuth, onUpdateProfile, offers = [], reviews = [], onAddOffer, onAcceptJob, onReport, isBlocked, onToggleBlock, getContact, onPhoneTap }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -205,6 +224,8 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
   const acceptMode = (l.type === "is" || l.type === "arac") && l.priceType === "sabit";
   const acceptLabel = isVehicle ? "Aracı Kirala" : "İşi Kabul Et";
   const closed = l.status === "kapali" || l.status === "eslesti";
+  // ── Düzenli işin ÖNCELİK PENCERESİ ────────────────────────────────
+  const { reservedActive, reservedForMe, reservedBlocked, reservedSaat } = oncelikDurumu(l, user, isOwner);
   const est = !isFixed && l.type === "is" && l.amount
     ? estimatePrice({ cat: l.cat, amount: l.amount, unit: l.unit, fromIl: l.il, toIl: l.varisIl, material: l.material, vehicle: l.vehicle, dateText: l.dateText, recurring: l.recurring, kmOverride: l.km, history: { listings, offers }, config: loadPricingConfig() })
     : null;
@@ -305,13 +326,17 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
   };
 
   // Paylaş — native paylaşım sayfası (iOS/Android), web'de Web Share / panoya kopyala.
+  // Metin artık çıplak başlık değil: güzergâh + yük + fiyat + tarih. Grup
+  // sohbetinde tek bakışta okunmayan ilan hiç okunmuyor.
   const onShare = async () => {
     hapticTap();
     // Native'de location.href "localhost" olur → public link kur (başka cihazda açılsın).
     const url = listingShareUrl(l.id);
-    const res = await shareUrl({ title: l.title, text: `${l.title} — YÜKLET`, url });
+    const res = await shareUrl({ title: l.title, text: listingShareText(l), url });
     if (res === "copied") toast("Bağlantı kopyalandı", "success");
   };
+  // Doğrudan WhatsApp — "paylaş → uygulama seç" adımını atlar.
+  const onShareWA = () => { hapticTap(); shareToWhatsApp(listingShareText(l)); };
 
   // Engelleme durumu (ilan sahibi).
   const blocked = isBlocked ? isBlocked(l.ownerId) : false;
@@ -638,6 +663,18 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
             {l.status === "eslesti" ? "Bu ilan eşleşti, yeni teklif alınmıyor." : "Bu ilan kapatıldı, yeni teklif alınmıyor."}
           </div>
         )}
+        {/* Öncelik penceresi — düzenli işin sıradaki seferi */}
+        {!isOwner && !closed && reservedActive && (
+          <div style={{ background: reservedForMe ? "#F0FBF3" : C.stone, border: `2px solid ${reservedForMe ? C.green : C.ink}`, borderRadius: 6, padding: 14, display: "flex", alignItems: "center", gap: 10 }}>
+            <RotateCw size={17} strokeWidth={2.6} color={reservedForMe ? C.green : C.sub} style={{ flexShrink: 0 }} />
+            <div style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, color: reservedForMe ? C.green : C.sub, lineHeight: 1.5 }}>
+              {reservedForMe
+                ? `Düzenli işin yeni seferi — ÖNCE SANA açık. ${reservedSaat} saat içinde kabul edersen iş senin.`
+                : `Bu düzenli sefer önceki nakliyecisine ayrıldı. ${reservedSaat} saat sonra herkese açılacak.`}
+            </div>
+          </div>
+        )}
+
         {/* Tanıtım ilanı: aksiyonların yerini alan pasif bilgi bloğu */}
         {isShowcase && (
           <div style={{ background: C.stone, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 16, textAlign: "center" }}>
@@ -682,6 +719,14 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
           )}
         </div>
 
+        {/* WhatsApp'a at — asıl dağıtım kanalı damperci/ocak grupları.
+            Hazır metin: güzergâh + yük + fiyat + link. Uygulama içi paylaş
+            sayfası (üstteki ikon) yedek yol olarak duruyor. */}
+        <button onClick={onShareWA}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", background: "#25D366", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "13px", fontFamily: HEAD, fontSize: 13.5, fontWeight: 800, color: C.ink, textTransform: "uppercase", cursor: "pointer", boxShadow: "3px 3px 0 rgba(10,10,10,.18)" }}>
+          <MessageCircle size={16} strokeWidth={2.6} /> WhatsApp'ta Paylaş
+        </button>
+
         {/* report button — full-width white 2px, red mono uppercase */}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setShowReport(true)}
@@ -722,7 +767,13 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
           </div>
           {/* Rol uymuyorsa aksiyon alanı tamamen gizlenir — nakliyeci araç/ürün
               ilanında, alıcı iş ilanında buton/uyarı görmez; sadece fiyat kalır. */}
-          {!roleAllowed ? null : acceptMode && user ? (
+          {!roleAllowed ? null : reservedBlocked ? (
+            // Öncelik penceresi doluyken kabul düğmesi ÇALIŞMAZ (sunucu da
+            // reddeder). Tıklanabilir bırakıp hata göstermek yerine nedenini yaz.
+            <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, color: C.sub, textAlign: "right", lineHeight: 1.4, maxWidth: 150 }}>
+              {reservedSaat} saat sonra<br />herkese açılıyor
+            </span>
+          ) : acceptMode && user ? (
             <button onClick={startAccept}
               style={{ display: "flex", alignItems: "center", gap: 7, background: C.green, color: "#fff", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 18px", fontFamily: HEAD, fontWeight: 800, fontSize: 14, textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap", boxShadow: "3px 3px 0 rgba(10,10,10,0.18)" }}>
               <Check size={17} strokeWidth={3} /> {acceptLabel}

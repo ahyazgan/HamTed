@@ -432,7 +432,7 @@ function EmptyBox({ icon, title, sub, action }) {
   );
 }
 
-export default function ListingsPage({ listings = LISTINGS, user, fleet = [], onRefresh, blockedIds = [], offers = [], reviews = [] }) {
+export default function ListingsPage({ listings = LISTINGS, user, fleet = [], onRefresh, blockedIds = [], offers = [], reviews = [], onSearchSignal }) {
   const navigate = useNavigate();
   // Nakliyeci uzmanlığı (silobas/hafriyat) → İlanlar bu kategoriyle açılır.
   // null = ikisi de / belirsiz / nakliyeci değil → varsayılan "Tümü".
@@ -655,6 +655,30 @@ export default function ListingsPage({ listings = LISTINGS, user, fleet = [], on
     }, 700);
     return () => clearTimeout(id);
   }, [q]);
+
+  // ── TALEP SİNYALİ: "aradı ama BULAMADI" ───────────────────────────
+  // Biri "Bergama · mıcır" arıyor, ekran boş geliyor ve o bilgi buhar oluyor.
+  // Panelde "Bergama · mıcır · 14 arama · 0 ilan" görünce hangi ocağa
+  // gidileceğini liste kendisi söylüyor. Geriye dönük ASLA toplanamaz.
+  //
+  // Kurallar: yalnız SIFIR sonuç yazılır (asıl sinyal bu; "az sonuç" soğuk
+  // başlangıçta her arama demek olurdu). Niyetli arama şart — boş ekranda
+  // gezinmek sinyal değildir. Aynı sorgu oturum başına bir kez.
+  const signaledRef = useRef(new Set());
+  useEffect(() => {
+    if (!onSearchSignal || mode === "backhaul") return undefined;
+    const niyetli = q.trim().length >= 2 || material !== "all" || il !== "all";
+    if (!niyetli || filtered.length !== 0) return undefined;
+    const imza = [type, cat, il, material, norm(q.trim())].join("|");
+    if (signaledRef.current.has(imza)) return undefined;
+    // Yazma bitmeden kaydetme: her tuş vuruşunu ayrı bir sinyal saymak
+    // ("m", "mı", "mıc", "mıcı", "mıcır") tabloyu çöple doldururdu.
+    const id = setTimeout(() => {
+      signaledRef.current.add(imza);
+      onSearchSignal({ type, cat, il, material, q: q.trim(), resultCount: 0 });
+    }, 1200);
+    return () => clearTimeout(id);
+  }, [onSearchSignal, mode, q, type, cat, il, material, filtered.length]);
 
   const removeRecent = (term) => {
     setRecent((prev) => {

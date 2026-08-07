@@ -12,6 +12,8 @@ import {
   loadAuthReturn, saveAuthReturn, clearAuthReturn, loadPhoneTaps, savePhoneTaps,
   loadAdminNotes, saveAdminNotes,
   loadProfileCache, saveProfileCache, clearProfileCache, loadKeepSession,
+  loadSearchSignals, appendSearchSignal,
+  loadPendingInvite, savePendingInvite, clearPendingInvite,
 } from "./utils/storage";
 import { visibleReviewsFor } from "./utils/reviewGate";
 import { newId, nowIso } from "./utils/id";
@@ -206,6 +208,46 @@ function AppShell() {
     }
     setUserListings(prev => prev.filter(l => l.id !== id)); setOffers(prev => prev.filter(o => String(o.listingId) !== String(id)));
     return { ok: true };
+  };
+
+  // ── DÜZENLİ SEVKİYAT: sırası gelen seferi aç ──────────────────────
+  // `recurring` bugüne kadar yalnızca bir etiketti. Artık şablon ilan sırası
+  // gelince yeni seferi doğurur ve önceki nakliyeciye öncelik tanır.
+  // SB'de iş SUNUCUDA (run_my_recurrences, atomik). Yerel mod aynı kuralların
+  // JS karşılığıdır — önizlemede de aynı davranış görülsün.
+  const RECUR_MS = { gunluk: 86400000, haftalik: 7 * 86400000, aylik: 30 * 86400000 };
+  const runRecurrencesLocal = () => {
+    const now = Date.now();
+    const me = user;
+    if (!me) return 0;
+    const templates = userListings.filter((l) =>
+      l.recurring && !l.parentId && l.nextRunAt && String(l.ownerId) === String(me.id) && new Date(l.nextRunAt).getTime() <= now);
+    if (!templates.length) return 0;
+    const yeni = [];
+    const sira = {};
+    for (const t of templates) {
+      const iv = RECUR_MS[t.recurringFreq] || RECUR_MS.haftalik;
+      // Kaçırılmış periyotları tek adımda bugünden SONRAKİ ilk sefere taşı.
+      let next = new Date(t.nextRunAt).getTime();
+      while (next <= now) next += iv;
+      sira[String(t.id)] = new Date(next).toISOString();
+      // Şablon ya da bir kopyası hâlâ açıksa yeni sefer AÇMA (pano çöplenmesin).
+      const acik = t.status === "aktif" || userListings.some((c) => String(c.parentId) === String(t.id) && c.status === "aktif");
+      if (acik) continue;
+      const oncekiKopya = userListings
+        .filter((c) => String(c.parentId) === String(t.id) && c.acceptedById)
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+      const prev = oncekiKopya?.acceptedById || t.acceptedById || null;
+      yeni.push({
+        ...t, id: newId(), parentId: t.id, recurring: false, nextRunAt: null,
+        status: "aktif", createdAt: nowIso(), createdText: "az once",
+        acceptedById: null, assignedVehicle: null, phase: null, cycleStage: null,
+        arrivedAt: null, tripsDone: 0, deliveryProof: null, offers: 0,
+        reservedForId: prev, reservedUntil: prev ? new Date(now + 12 * 3600000).toISOString() : null,
+      });
+    }
+    setUserListings((prev) => [...yeni, ...prev.map((l) => (sira[String(l.id)] ? { ...l, nextRunAt: sira[String(l.id)] } : l))]);
+    return yeni.length;
   };
 
   // ── Ödeme / Escrow (emanet) — sağlayıcı (mock veya gerçek) + listing durumu ──
@@ -440,6 +482,17 @@ function AppShell() {
   // yerel modda sayaç haritasından tarihsiz satırlara açılır (Pano top-5 çalışır).
   const [tapStats, setTapStats] = useState([]);
   const [deletedAccounts, setDeletedAccounts] = useState([]); // SB-only; yerel modda silme kaydı yok
+  // ── TALEP SİNYALİ: "aradı ama bulamadı" kaydı ──────────────────────
+  // Sonuçsuz arama, geriye dönük ASLA toplanamayan veri: kullanıcı arar,
+  // ekran boş gelir, bilgi buhar olur. Panelde "Bergama · mıcır · 14 arama
+  // · 0 ilan" görünce hangi ocağa gidileceğini liste kendisi söyler.
+  const [searchSignals, setSearchSignals] = useState(() => (SB ? [] : loadSearchSignals()));
+  // Fire-and-forget: arama ekranı bunun sonucunu BEKLEMEZ, hata akışı bozmaz.
+  const logSearchSignal = (sig) => {
+    const rec = { ...sig, userId: user?.id || null, role: (profile || user)?.role || "" };
+    if (SB) { api.logSearchSignal(rec).catch(() => {}); return; }
+    setSearchSignals(appendSearchSignal(rec));
+  };
   const saveAdminNote = async (userId, data) => {
     const next = { ...adminNotes, [String(userId)]: { note: data.note || "", nextCall: data.nextCall || "" } };
     if (SB) {
@@ -653,6 +706,17 @@ function AppShell() {
     logAdmin("duyuru", next.active ? `Yayında (${hedef}): "${next.text}"` : "Kapatıldı");
     return { ok: true };
   };
+  // Admin: TÜM üyelerin düzenli işlerini işlet. Üye uygulamayı hiç açmasa da
+  // sırası gelen sefer açılsın — saha turunda panelden tek dokunuş.
+  const runAllRecurrences = async () => {
+    if (!SB) { const n = runRecurrencesLocal(); return { ok: true, count: n }; }
+    try {
+      const n = await api.runAllRecurrences();
+      if (n > 0) await reloadListings();
+      logAdmin("recurring", `${n} düzenli sefer açıldı`);
+      return { ok: true, count: n };
+    } catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Düzenli seferler işletilemedi.") }; }
+  };
   // Admin: herhangi bir kullaniciyi guncelle (ban/askiya al/rol/manuel onay).
   const updateUserAdmin = async (userId, patch) => {
     // SB modunda önce DB'ye yaz; başarısızsa yerel state'i HİÇ değiştirme
@@ -832,6 +896,39 @@ function AppShell() {
     }
   }, [SB, user?.id, user?.role]);
 
+  // ── Oturum açılınca: davet zincirini kapat + düzenli seferleri işlet ──
+  // Her ikisi de "bir kez, sessizce" işlerdir; hata hiçbir koşulda akışı bozmaz
+  // (migration koşulmamışsa RPC yok → sessizce atlanır).
+  useEffect(() => {
+    if (!user?.id) return;
+    const bekleyen = loadPendingInvite();
+    if (SB) {
+      // 1) Davet: kodu sahiplen (sunucu yalnız bir kez, invited_by boşken yazar).
+      (async () => {
+        // Kod tek kullanımlık: sonuç ne olursa olsun temizlenir. Sunucu zaten
+        // idempotent (invited_by doluysa yazmaz); geçersiz/geç kalmış bir kodu
+        // her açılışta yeniden denemenin de anlamı yok.
+        if (bekleyen) { await api.claimInvite(bekleyen); clearPendingInvite(); }
+        const [code, count] = await Promise.all([
+          api.myInviteCode().catch(() => ""),
+          api.myInviteCount().catch(() => 0),
+        ]);
+        setInvite({ code, count });
+      })();
+      // 2) Düzenli sevkiyat: sırası gelen sefer varsa aç, listeyi tazele.
+      api.runMyRecurrences().then((n) => { if (n > 0) reloadListings(); }).catch(() => {});
+      return;
+    }
+    // Yerel mod (önizleme): kod kullanıcı kimliğinden türetilir, sayı users'tan.
+    if (bekleyen) clearPendingInvite();
+    const code = String(user.id).replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(-6).padStart(6, "X");
+    setInvite({ code, count: users.filter((u) => String(u.invitedBy) === String(user.id)).length });
+    runRecurrencesLocal();
+    // users/userListings kasten bağımlılık DEĞİL: bu blok oturum başına bir kez
+    // çalışmalı, her ilan değişiminde yeniden değil.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [SB, user?.id]);
+
   // Son giriş damgası: oturum açık kullanıcı uygulamayı her açtığında bir kez
   // dokunur (RPC 1 saatten yeni damgayı tekrar yazmaz). Admin "7 gündür girmemiş"
   // segmentini bundan üretir. Hata sessiz — akışı hiçbir koşulda bozmaz.
@@ -862,6 +959,8 @@ function AppShell() {
     api.fetchPhoneTapStats().then(setTapStats).catch(() => {});
     api.fetchAdminNotes().then(setAdminNotes).catch(() => {});
     api.fetchDeletedAccounts().then(setDeletedAccounts).catch(() => {});
+    // Talep sinyali: sonuçsuz aramalar (tablo yoksa sessizce boş → sekme "kayıt yok" der).
+    api.fetchSearchSignals().then(setSearchSignals).catch(() => {});
     // user yerine id+email yeterli (isAdmin yalnizca bunlara bakar).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [SB, user?.id, user?.email]);
@@ -924,6 +1023,26 @@ function AppShell() {
     const m = { ...loadPhoneTaps() }; const k = String(listing.id);
     m[k] = (m[k] || 0) + 1; savePhoneTaps(m); setPhoneTaps(m);
   };
+  // ── DAVET / REFERANS ───────────────────────────────────────────────
+  // Ziyaret ettiğin her ocağın tanıdığı 5 nakliyeci var. Davet zinciri
+  // "kim kimi getirdi"yi kayıt altına alır — kurucu üye teklifiyle birebir
+  // örtüşür. Kod paylaşılabilir link olur: yuklet.co/?davet=ABC123
+  const [invite, setInvite] = useState({ code: "", count: 0 });
+  // Linkten gelen kodu YAKALA. Kullanıcı henüz giriş yapmamış olabilir —
+  // kod yerelde bekler, oturum açılınca sahiplenilir. (Girişten önce
+  // kaybolsaydı davetlerin çoğu zinciri koparırdı: link → kayıt → giriş.)
+  useEffect(() => {
+    const code = new URLSearchParams(location.search).get("davet");
+    if (!code) return;
+    savePendingInvite(code.trim().slice(0, 12));
+    // Adresi temizle (router'ı dolaştırmadan) — kod tek kullanımlık.
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("davet");
+      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    } catch { /* noop */ }
+  }, [location.search]);
+
   // ── Giris: E-POSTA / SIFRE (kayit + giris) ───────────────────
   // SB modu: signUp/signIn Supabase'e yazar; onAuthChange oturumu kurar. Onay
   // e-postasi aciksa needsConfirm doner (modal mesaj gosterir, kapanmaz). Rol
@@ -1182,7 +1301,7 @@ function AppShell() {
                 <Route path="/sevkiyat" element={<PageTransition><DispatchPage user={user} listings={listings} offers={offers} onRequireAuth={requireAuth} /></PageTransition>} />
                 <Route path="/sefer-gecmisi" element={<PageTransition><TripHistoryPage user={user} listings={listings} offers={offers} onRequireAuth={requireAuth} /></PageTransition>} />
                 <Route path="/filo" element={<PageTransition><FleetPage user={user} fleet={myFleet} onAddVehicle={addVehicle} onUpdateVehicle={updateVehicle} onRemoveVehicle={removeVehicle} onRequireAuth={requireAuth} /></PageTransition>} />
-                <Route path="/ilanlar" element={<PageTransition><ListingsPage listings={listings} user={user} fleet={myFleet} blockedIds={myBlocked} offers={offers} reviews={reviews} onRefresh={SB ? () => Promise.all([reloadListings(), reloadOffers()]) : undefined} /></PageTransition>} />
+                <Route path="/ilanlar" element={<PageTransition><ListingsPage listings={listings} user={user} fleet={myFleet} blockedIds={myBlocked} offers={offers} reviews={reviews} onSearchSignal={logSearchSignal} onRefresh={SB ? () => Promise.all([reloadListings(), reloadOffers()]) : undefined} /></PageTransition>} />
                 <Route path="/ilan/:id" element={<PageTransition><IlanDetayPage listings={listings} user={user} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} offers={offers} reviews={reviews} onAddOffer={addOffer} onAcceptJob={acceptJob} onReport={addReport} isBlocked={isBlocked} onToggleBlock={toggleBlock} getContact={getContact} onPhoneTap={logPhoneTap} /></PageTransition>} />
                 <Route path="/takip/:id" element={<PageTransition><TakipPage listings={listings} user={user} offers={offers} getContact={getContact} reviews={reviews} onAddReview={addReview} getUserRating={getUserRating} onUpdateListing={updateListing} onReport={addReport} onCancelJob={cancelJob} onPayToEscrow={payToEscrow} onReleasePayment={releasePayment} onRefundPayment={refundPayment} onEarlyPayout={earlyPayoutNakliyeci} /></PageTransition>} />
                 <Route path="/sozlesme/:offerId" element={<PageTransition><SozlesmePage listings={listings} offers={offers} getContact={getContact} /></PageTransition>} />
@@ -1194,9 +1313,9 @@ function AppShell() {
                 <Route path="/ilanlarim" element={<PageTransition><IlanlarimPage listings={listings} user={user} offers={offers} reviews={reviews} onUpdateOffer={updateOffer} onAcceptOffer={acceptOffer} onUpdateListing={updateListing} onDeleteListing={removeListing} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} getContact={getContact} onReport={addReport} phoneTaps={phoneTaps} /></PageTransition>} />
                 <Route path="/tekliflerim" element={<PageTransition><TekliflerimPage listings={listings} user={user} offers={offers} onRequireAuth={requireAuth} onSeen={markOffersSeen} /></PageTransition>} />
                 <Route path="/mesajlar" element={<PageTransition><MesajlarPage user={user} listings={listings} offers={offers} messages={messages} onSendMessage={addMessage} onRequireAuth={requireAuth} onSeen={markMessagesSeen} onMarkThreadRead={markThreadRead} getContact={getContact} msgSeen={msgSeen} blockedIds={myBlocked} onReport={addReport} onToggleBlock={toggleBlock} /></PageTransition>} />
-                <Route path="/profil" element={<PageTransition><ProfilPage user={user} onUpdateProfile={updateProfile} onRequireAuth={requireAuth} onLogout={logout} onDeleteAccount={deleteAccount} reviews={reviews} getUserRating={getUserRating} listings={listings} offers={offers} docs={docs.filter(d => user && String(d.ownerId) === String(user.id))} onAddDoc={addDoc} onRemoveDoc={removeDoc} notifPrefs={notifPrefs} onUpdateNotifPrefs={updateNotifPrefs} onReport={addReport} blockedIds={myBlocked} onToggleBlock={toggleBlock} getContact={getContact} /></PageTransition>} />
+                <Route path="/profil" element={<PageTransition><ProfilPage user={user} onUpdateProfile={updateProfile} onRequireAuth={requireAuth} onLogout={logout} onDeleteAccount={deleteAccount} reviews={reviews} getUserRating={getUserRating} listings={listings} offers={offers} docs={docs.filter(d => user && String(d.ownerId) === String(user.id))} onAddDoc={addDoc} onRemoveDoc={removeDoc} notifPrefs={notifPrefs} onUpdateNotifPrefs={updateNotifPrefs} onReport={addReport} blockedIds={myBlocked} onToggleBlock={toggleBlock} getContact={getContact} invite={invite} /></PageTransition>} />
                 <Route path="/panel" element={<PageTransition><DashboardPage user={user} listings={listings} offers={offers} messages={messages} onRequireAuth={requireAuth} /></PageTransition>} />
-                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} adminNotes={adminNotes} onSaveAdminNote={saveAdminNote} tapStats={adminTapStats} deletedAccounts={deletedAccounts} /></PageTransition>} />
+                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} adminNotes={adminNotes} onSaveAdminNote={saveAdminNote} tapStats={adminTapStats} deletedAccounts={deletedAccounts} searchSignals={searchSignals} onRunRecurrences={runAllRecurrences} /></PageTransition>} />
                 <Route path="/muteahhit" element={<PageTransition><MuteahhitPage /></PageTransition>} />
                 <Route path="/tedarikci" element={<PageTransition><TedarikciPage /></PageTransition>} />
                 <Route path="/satici/:id" element={<PageTransition><SaticiProfilPage user={user} users={users} listings={listings} offers={offers} reviews={reviews} getUserRating={getUserRating} onReport={addReport} /></PageTransition>} />

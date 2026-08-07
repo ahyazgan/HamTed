@@ -18,12 +18,12 @@ import SEO from "../components/SEO";
 import Logo from "../components/Logo";
 import PhoneGateModal from "../components/PhoneGateModal";
 import { isValidPhone } from "../lib/smsProvider";
-import { shareUrl, listingShareUrl } from "../native/share";
+import { shareUrl, listingShareUrl, listingShareText, shareToWhatsApp } from "../native/share";
 import { hapticTap, hapticSuccess } from "../native/haptics";
 import { getCurrentPosition } from "../native/geo";
 import {
   ChevronLeft, ArrowRight, Truck, Package, Boxes, Check, CheckCircle2,
-  MapPin, Share2, Pencil, ChevronDown, Navigation, Shield,
+  MapPin, Share2, Pencil, ChevronDown, Navigation, Shield, MessageCircle,
 } from "lucide-react";
 
 const LocationPicker = lazy(() => import("../components/LocationPicker"));
@@ -504,11 +504,13 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       ? (published.price ? "₺" + published.price.toLocaleString("tr-TR") + " /ton" : "Fiyat sorun")
       : published.priceType === "sabit" && published.price
         ? "₺" + published.price.toLocaleString("tr-TR") : "Teklife açık";
+    // Yayın anı en yüksek niyetli paylaşım anıdır ("ilanı verdim, gruba atayım").
+    // Metin çıplak başlık değil, tek bakışta okunan ilan kartı.
     const shareListing = async () => {
       hapticTap();
-      const url = listingShareUrl(published.id);
-      await shareUrl({ title: published.title, text: `${published.title} — YÜKLET`, url });
+      await shareUrl({ title: published.title, text: listingShareText(published), url: listingShareUrl(published.id) });
     };
+    const shareListingWA = () => { hapticTap(); shareToWhatsApp(listingShareText(published)); };
     return (
       <div style={{ ...shell, paddingBottom: 96 }}>
         <SEO title="İlan yayınlandı" description="İlanınız yayında." />
@@ -554,6 +556,12 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
               {asUser ? <><Shield size={16} /> Panele dön</> : <><Pencil size={16} /> Düzenle</>}
             </button>
           </div>
+
+          {/* İlanın asıl dağıtım kanalı damperci/ocak WhatsApp grupları —
+              yayın anında tek dokunuşla oraya düşsün. */}
+          <button onClick={shareListingWA} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: C.ink, fontFamily: ARCH, fontSize: 14, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "13px 0", cursor: "pointer", boxShadow: "3px 3px 0 #0A0A0A" }}>
+            <MessageCircle size={17} strokeWidth={2.6} /> WhatsApp'ta Paylaş
+          </button>
 
           <button onClick={() => navigate(`/ilan/${published.id}`)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: C.ink, color: C.yellow, fontFamily: ARCH, fontSize: 15, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "14px 0", cursor: "pointer" }}>
             İlanı gör <ArrowRight size={18} />

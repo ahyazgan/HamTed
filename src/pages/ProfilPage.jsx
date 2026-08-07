@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Settings, BadgeCheck, Truck, Package, Lock, Building2, HelpCircle, LogOut, ChevronRight, ShieldCheck, Upload, FileText, Star, Heart, Navigation, History, Inbox, Bell, Flag, Ban, Trash2 } from "lucide-react";
+import { Settings, BadgeCheck, Truck, Package, Lock, Building2, HelpCircle, LogOut, ChevronRight, ShieldCheck, Upload, FileText, Star, Heart, Navigation, History, Inbox, Bell, Flag, Ban, Trash2, UserPlus, MessageCircle } from "lucide-react";
 import { useToast } from "../components/Toast";
 import { StarsDisplay } from "../components/Stars";
 import SEO from "../components/SEO";
@@ -14,6 +14,7 @@ import { isAdmin } from "../utils/admin";
 import { computeReliability, reliabilityTier } from "../utils/reliability";
 import { PAYMENTS_ENABLED } from "../config/features";
 import { BUILD_STAMP } from "../lib/buildInfo";
+import { shareUrl, shareToWhatsApp, inviteShareUrl } from "../native/share";
 
 // ── SAHA profil — keskin endüstriyel "saha" dili.
 //    2px ink çerçeve, koyu header + hazard, Archivo uppercase, Space Mono, stroke ikon.
@@ -180,7 +181,7 @@ const previewBtnSt = {
   letterSpacing: "-0.01em", color: C.ink, cursor: "pointer", marginBottom: 16,
 };
 
-export default function ProfilPage({ user, onUpdateProfile, onRequireAuth, onLogout, reviews = [], getUserRating, listings = [], offers = [], docs = [], onAddDoc, onRemoveDoc, notifPrefs = DEFAULT_NOTIF_PREFS, onUpdateNotifPrefs, onReport, blockedIds = [], onToggleBlock, getContact }) {
+export default function ProfilPage({ user, onUpdateProfile, onRequireAuth, onLogout, reviews = [], getUserRating, listings = [], offers = [], docs = [], onAddDoc, onRemoveDoc, notifPrefs = DEFAULT_NOTIF_PREFS, onUpdateNotifPrefs, onReport, blockedIds = [], onToggleBlock, getContact, invite = { code: "", count: 0 } }) {
   const toast = useToast();
   const navigate = useNavigate();
   const [docType, setDocType] = useState("K Belgesi");
@@ -387,6 +388,22 @@ export default function ProfilPage({ user, onUpdateProfile, onRequireAuth, onLog
     : String(myListings.length);
   const statLabels = STAT_LABELS_BY_ROLE[role] || STAT_LABELS_BY_ROLE.isveren;
   const myMenu = menuForRole(role);
+
+  // ── Davet: kodu paylaş / kopyala ──
+  const inviteText = () =>
+    `YÜKLET'e katıl — hafriyat ve silobas yükleri tek yerde.\n` +
+    `Davet kodum: ${invite.code}\n\n${inviteShareUrl(invite.code)}`;
+  const shareInvite = () => shareToWhatsApp(inviteText());
+  const copyInvite = async () => {
+    // Panoya kopyalama tarayıcı/izin sebebiyle başarısız olabilir — sessiz
+    // "kopyalandı" yalanı yerine paylaşım sayfasına düş.
+    try {
+      await navigator.clipboard.writeText(inviteShareUrl(invite.code));
+      toast("Davet bağlantısı kopyalandı", "success");
+    } catch {
+      shareUrl({ title: "YÜKLET daveti", text: inviteText(), url: inviteShareUrl(invite.code) });
+    }
+  };
 
   return (
     <div style={shell}>
@@ -1036,6 +1053,36 @@ export default function ProfilPage({ user, onUpdateProfile, onRequireAuth, onLog
                 ))}
               </div>
             )}
+          </section>
+        )}
+
+        {/* ── DAVET / REFERANS ──────────────────────────────────────
+            Ziyaret edilen her ocağın tanıdığı 5 nakliyeci var; ağ elle
+            değil zincirle büyür. Kod telefonda okunabilecek kadar kısa
+            (karışan harf/rakam yok) ve link doğrudan WhatsApp'a gider. */}
+        {invite?.code && (
+          <section style={{ background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 15, boxShadow: "6px 6px 0 rgba(10,10,10,.12)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <UserPlus size={17} strokeWidth={2.5} color={C.ink} />
+              <span style={{ flex: 1, fontFamily: ARCHIVO, fontSize: 14, fontWeight: 800, textTransform: "uppercase", letterSpacing: "-0.01em", color: C.ink }}>Arkadaşını davet et</span>
+              {invite.count > 0 && (
+                <span style={{ background: C.green, color: "#fff", fontFamily: MONO, fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "3px 7px" }}>{invite.count} kişi</span>
+              )}
+            </div>
+            <p style={{ fontFamily: MONO, fontSize: 11.5, color: C.sub, lineHeight: 1.55, margin: "9px 0 12px" }}>
+              Çalıştığın nakliyeci ya da ocağı YÜKLET'e çağır. Ağ ne kadar
+              genişse hem yük hem araç o kadar hızlı bulunur.
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <button onClick={copyInvite}
+                style={{ flex: 1, minWidth: 0, background: C.stone, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "11px 12px", fontFamily: MONO, fontSize: 15, fontWeight: 700, letterSpacing: "0.14em", color: C.ink, cursor: "pointer" }}>
+                {invite.code}
+              </button>
+              <button onClick={shareInvite}
+                style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0, background: "#25D366", color: C.ink, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "11px 14px", fontFamily: ARCHIVO, fontSize: 12.5, fontWeight: 800, textTransform: "uppercase", cursor: "pointer" }}>
+                <MessageCircle size={15} strokeWidth={2.6} /> Davet et
+              </button>
+            </div>
           </section>
         )}
 

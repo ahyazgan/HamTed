@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Check, X, MessageSquare, FileText, Phone, RotateCw, Pencil, Lock, Share2, Trash2, ArrowRight, ShieldCheck, Flag } from "lucide-react";
+import { Plus, Check, X, MessageSquare, MessageCircle, FileText, Phone, RotateCw, Pencil, Lock, Share2, Trash2, ArrowRight, ShieldCheck, Flag } from "lucide-react";
 import { CATS, STOCK_LEVELS } from "../data/categories";
 import CategoryIcon from "../components/CategoryIcon";
 import ReportModal from "../components/ReportModal";
@@ -8,7 +8,7 @@ import PhoneGateModal from "../components/PhoneGateModal";
 import { isValidPhone } from "../lib/smsProvider";
 import { computeReliability, reliabilityTier } from "../utils/reliability";
 import { useToast } from "../components/Toast";
-import { shareUrl, listingShareUrl } from "../native/share";
+import { shareUrl, listingShareUrl, listingShareText, shareToWhatsApp } from "../native/share";
 import { hapticTap, hapticSuccess, hapticWarn } from "../native/haptics";
 import SEO from "../components/SEO";
 import Logo from "../components/Logo";
@@ -50,6 +50,14 @@ const OFFER_STATUS = {
 function fmtDate(iso) {
   try { return new Date(iso).toLocaleDateString("tr-TR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }); }
   catch { return ""; }
+}
+
+// Düzenli sevkiyat: sıklık etiketi + "sıradaki sefer" günü (saatsiz, kısa).
+const FREQ_LABEL = { gunluk: "Her gün", haftalik: "Her hafta", aylik: "Her ay" };
+function fmtGun(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleDateString("tr-TR", { day: "numeric", month: "short" }); }
+  catch { return "—"; }
 }
 
 function shortId(id) {
@@ -164,11 +172,24 @@ export default function IlanlarimPage({ listings = [], user, offers = [], review
   };
   const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
+  // Paylaş — artık ÇIPLAK LİNK değil, tek bakışta okunan ilan metni
+  // (güzergâh + yük + fiyat + tarih). WhatsApp grubuna yapıştırılan şey budur.
   const share = async (l) => {
     hapticTap();
-    const url = listingShareUrl(l.id);
-    const res = await shareUrl({ title: l.title, text: `${l.title} — YÜKLET`, url });
+    const res = await shareUrl({ title: l.title, text: listingShareText(l), url: listingShareUrl(l.id) });
     if (res === "copied") toast("İlan bağlantısı kopyalandı", "info");
+  };
+  // Doğrudan WhatsApp — sahanın tamamı damperci gruplarında dönüyor;
+  // "paylaş → uygulama seç" adımını atlamak kullanımı belirgin artırıyor.
+  const shareWA = (l) => { hapticTap(); shareToWhatsApp(listingShareText(l)); };
+
+  // Düzenli sevkiyat: tekrarı durdur / yeniden başlat. Sunucudaki trigger
+  // recurring=false olunca sırayı (next_run_at) siler — yani bu düğme
+  // özelliğin gerçek AÇMA/KAPAMA anahtarıdır.
+  const toggleRecurring = async (l) => {
+    const res = await onUpdateListing?.(l.id, { recurring: !l.recurring });
+    if (res && res.ok === false) { toast(res.error || "Kaydedilemedi", "error"); return; }
+    toast(l.recurring ? "Düzenli tekrar durduruldu" : "Düzenli tekrar açıldı", "success");
   };
 
   return (
@@ -376,6 +397,29 @@ export default function IlanlarimPage({ listings = [], user, offers = [], review
                         <IconBtn title="Sil" onClick={() => del(l)}><Trash2 size={15} strokeWidth={2.2} color={C.red} /></IconBtn>
                       </div>
                     </div>
+
+                    {/* WhatsApp'a at — ilanın hedef kitlesi bu uygulamada değil,
+                        damperci/ocak gruplarında. Tek dokunuş, hazır metin. */}
+                    <button onClick={() => shareWA(l)}
+                      style={{ ...btnBase, width: "100%", justifyContent: "center", marginTop: 9, background: "#25D366", color: "#0A0A0A", borderColor: C.ink, padding: "10px 0" }}>
+                      <MessageCircle size={14} strokeWidth={2.6} /> WhatsApp'ta Paylaş
+                    </button>
+
+                    {/* Düzenli sevkiyat durumu — sıradaki seferin ne zaman
+                        açılacağı ve tekrarı durdurma anahtarı. */}
+                    {(l.recurring || l.nextRunAt) && (
+                      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 9, background: l.recurring ? "#F0FBF3" : C.stone, border: `2px solid ${l.recurring ? C.green : C.border}`, borderRadius: 6, padding: "9px 11px" }}>
+                        <RotateCw size={14} strokeWidth={2.6} color={l.recurring ? C.green : C.muted} style={{ flexShrink: 0 }} />
+                        <span style={{ flex: 1, minWidth: 130, fontFamily: MONO, fontSize: 11, color: C.sub }}>
+                          {l.recurring
+                            ? `${FREQ_LABEL[l.recurringFreq] || "Düzenli"} · sıradaki sefer: ${fmtGun(l.nextRunAt)}`
+                            : "Düzenli tekrar kapalı"}
+                        </span>
+                        <button onClick={() => toggleRecurring(l)} style={{ ...btnBase, color: l.recurring ? C.red : C.green, padding: "6px 9px", fontSize: 10.5 }}>
+                          {l.recurring ? "Tekrarı durdur" : "Tekrarı aç"}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Expanded: offers + management */}
                     {open && (

@@ -117,6 +117,22 @@ export const savePhoneTaps = (v) => save("hamted_phone_taps", v);
 // SB modunda admin_notes tablosuna yazilir (api.saveAdminNote).
 export const loadAdminNotes = () => load("hamted_admin_notes", {});
 export const saveAdminNotes = (v) => save("hamted_admin_notes", v);
+// Talep sinyali (yalniz localStorage modu) — "aradi ama bulamadi" kayitlari.
+// SB modunda search_signals tablosuna yazilir (api.logSearchSignal).
+// Kapak: en yeni 300 satir (yerel depo sismesin).
+export const loadSearchSignals = () => load("hamted_search_signals", []);
+export const appendSearchSignal = (sig) => {
+  const next = [{ id: Date.now() + "-" + Math.random().toString(36).slice(2, 6), createdAt: new Date().toISOString(), ...sig }, ...loadSearchSignals()].slice(0, 300);
+  save("hamted_search_signals", next);
+  return next;
+};
+// Davet kodu bekleyen link: kullanici /?davet=ABC123 ile geldi ama HENUZ
+// giris yapmadi. Kod burada bekler; oturum acilinca claim_invite ile
+// sahiplenilir ve silinir. Aksi halde davet zinciri girisin oncesinde kopardi.
+export const loadPendingInvite = () => loadStr("hamted_pending_invite", "");
+export const savePendingInvite = (v) => saveStr("hamted_pending_invite", v || "");
+export const clearPendingInvite = () => saveStr("hamted_pending_invite", "");
+
 // Admin denetim kaydi (audit log) — kim, ne zaman, ne yapti.
 export const loadAuditLog = () => load("hamted_audit_log", []);
 export const appendAudit = (entry) => {

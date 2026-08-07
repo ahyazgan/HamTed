@@ -29,6 +29,12 @@ const rowToListing = (r) => ({
   il: r.il, ilce: r.ilce, varisIl: r.varis_il, yukleme: r.yukleme, bosaltma: r.bosaltma,
   material: r.material, amount: r.amount, unit: r.unit,
   dateText: r.date_text, recurring: r.recurring, recurringText: r.recurring_text,
+  // Düzenli sevkiyat: sıklık/süre formda toplanıyordu ama DB'ye HİÇ yazılmıyordu
+  // (etiket kalıyor, tekrar çalışmıyordu). Artık şablon + sıradaki sefer gerçek.
+  recurringFreq: r.recurring_freq || "", recurringDuration: r.recurring_duration || "",
+  dailyTrips: r.daily_trips, nextRunAt: r.next_run_at, parentId: r.parent_id,
+  // Öncelik penceresi: düzenli işin yeni seferi bir süre önceki nakliyeciye ayrılır.
+  reservedForId: r.reserved_for_id, reservedUntil: r.reserved_until,
   vehicle: r.vehicle, capacity: r.capacity,
   priceType: r.price_type, price: r.price, desc: r.description,
   owner: r.owner_name, ownerId: r.owner_id, ownerLogo: r.owner_logo || "", ownerVerified: r.owner_verified, ownerRating: r.owner_rating,
@@ -49,6 +55,8 @@ const listingToRow = (l) => ({
   yukleme: l.yukleme, bosaltma: l.bosaltma, material: l.material,
   amount: l.amount ?? 0, unit: l.unit, date_text: l.dateText,
   recurring: l.recurring ?? false, recurring_text: l.recurringText ?? "",
+  recurring_freq: l.recurringFreq ?? null, recurring_duration: l.recurringDuration ?? null,
+  daily_trips: l.dailyTrips ?? null,
   vehicle: l.vehicle ?? null, capacity: l.capacity ?? null,
   price_type: l.priceType, price: l.price ?? null, description: l.desc ?? "",
   km: l.km ?? null, pickup: l.pickup ?? null, dropoff: l.dropoff ?? null,
@@ -60,7 +68,9 @@ const listingToRow = (l) => ({
 const LISTING_KEYMAP = {
   title: "title", il: "il", ilce: "ilce", varisIl: "varis_il", yukleme: "yukleme", bosaltma: "bosaltma",
   material: "material", amount: "amount", unit: "unit", dateText: "date_text",
-  recurring: "recurring", recurringText: "recurring_text", vehicle: "vehicle",
+  recurring: "recurring", recurringText: "recurring_text",
+  recurringFreq: "recurring_freq", recurringDuration: "recurring_duration", dailyTrips: "daily_trips",
+  vehicle: "vehicle",
   capacity: "capacity", priceType: "price_type", price: "price", desc: "description",
   status: "status", createdText: "created_text", type: "type", cat: "cat",
   km: "km", pickup: "pickup", dropoff: "dropoff", phase: "phase", tripsDone: "trips_done",
@@ -98,6 +108,11 @@ const rowToProfile = (r) => r && ({
   phone: r.phone, phoneVerified: r.phone_verified, verified: r.verified, rating: r.rating,
   status: r.status || "aktif",
   createdAt: r.created_at,  // admin Pano "bugün/7 gün yeni üye" sayacı bundan okur
+  // "Aracım bugün müsait" damgası — gelecekteyse nakliyeci şu an boşta demektir.
+  // Gün sonuna yazılır, ertesi gün kendiliğinden düşer (açık unutulmuş müsaitlik yok).
+  availableUntil: r.available_until || null,
+  // Davet / referans: kendi kodum + beni kim getirdi (admin panelinde okunur).
+  inviteCode: r.invite_code || "", invitedBy: r.invited_by || null,
   // NOT: lastSeen burada YOK — son giriş damgası profiles'tan çıkarılıp admin-özel
   // profile_activity tablosuna taşındı (üye başkasının giriş saatini görmesin).
   // Admin panelinde users listesine App.jsx fetchLastSeenMap ile eklenir.
@@ -337,6 +352,9 @@ export async function updateProfile(userId, patch) {
   if (patch.role != null) row.role = patch.role;
   if (patch.phoneVerified != null) row.phone_verified = patch.phoneVerified;
   if (patch.logo != null) row.logo = patch.logo;   // firma logosu (Storage URL)
+  // Müsaitlik: null = "müsait değilim" DEMEKTİR, o yüzden `!= null` değil `in`
+  // ile bakılır — aksi halde anahtarı kapatmak sunucuya hiç ulaşmazdı.
+  if ("availableUntil" in patch) row.available_until = patch.availableUntil || null;
   // Satıcı (tedarikçi) profil alanları
   if (patch.tesisTuru != null) row.tesis_turu = patch.tesisTuru;
   if (patch.sehir != null) row.sehir = patch.sehir;
@@ -647,6 +665,71 @@ export async function fetchPhoneTapStats() {
   const { data, error } = await supabase.from("phone_taps").select("listing_id, created_at");
   if (error) throw error;
   return (data || []).map((r) => ({ listingId: r.listing_id, createdAt: r.created_at }));
+}
+
+// ── Talep sinyali (search_signals) ───────────────────────────
+// "Aradı ama bulamadı" kaydı. Kayıtsız ziyaretçi de yazar (user_id null) —
+// asıl değerli sinyal çoğu zaman henüz üye olmamış alıcıdan gelir.
+// Fire-and-forget: hata AKIŞI BOZMAZ (arama sonucu ekranı beklemez).
+export async function logSearchSignal(sig) {
+  const { error } = await supabase.from("search_signals").insert({
+    user_id: sig.userId || null,
+    role: sig.role || "", type: sig.type || "", cat: sig.cat || "",
+    q: String(sig.q || "").slice(0, 120),
+    material: sig.material || "", il: sig.il || "",
+    result_count: Number(sig.resultCount) || 0,
+  });
+  if (error) throw error;
+}
+// Admin: ham sinyal satırları (RLS yalnız is_admin'e döndürür). Gruplama
+// istemcide yapılır — "Bergama · mıcır · 14 arama · 0 ilan" listesi.
+export async function fetchSearchSignals() {
+  const { data, error } = await supabase.from("search_signals")
+    .select("*").order("created_at", { ascending: false }).limit(1000);
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    id: r.id, userId: r.user_id, role: r.role, type: r.type, cat: r.cat,
+    q: r.q, material: r.material, il: r.il, resultCount: r.result_count, createdAt: r.created_at,
+  }));
+}
+
+// ── Düzenli sevkiyat (recurring) ─────────────────────────────
+// Sırası gelen düzenli işlerin yeni seferini açar. Sunucu tarafı atomik
+// (skip locked + sıra ilerletme aynı transaction) — iki cihaz aynı anda
+// çağırsa bile sefer iki kez açılmaz. Döner: açılan ilan sayısı.
+// Migration koşulmamışsa fonksiyon yoktur → 0 döner, akış bozulmaz.
+export async function runMyRecurrences() {
+  const { data, error } = await supabase.rpc("run_my_recurrences");
+  if (error) { console.warn("[runMyRecurrences]", error.message); return 0; }
+  return Number(data) || 0;
+}
+// Admin: TÜM üyelerin düzenli işlerini işlet (üye uygulamayı hiç açmasa da
+// sefer açılsın — saha turunda panelden tek dokunuş).
+export async function runAllRecurrences() {
+  const { data, error } = await supabase.rpc("run_all_recurrences");
+  if (error) throw error;
+  return Number(data) || 0;
+}
+
+// ── Davet / referans ─────────────────────────────────────────
+// Kendi davet kodum (sunucu yoksa üretir, varsa aynısını döner).
+export async function myInviteCode() {
+  const { data, error } = await supabase.rpc("my_invite_code");
+  if (error) throw error;
+  return String(data || "");
+}
+// Kodu sahiplen. Sunucu yalnız bir kez yazar (invited_by boşken), kendi
+// koduna ve 30 günden eski hesaba geriye dönük atıf yapmaz.
+export async function claimInvite(code) {
+  const { data, error } = await supabase.rpc("claim_invite", { p_code: code });
+  if (error) { console.warn("[claimInvite]", error.message); return false; }
+  return data === true;
+}
+// Kaç kişi getirdim? (Üye başkasının profil satırını okuyamaz; sayıyı RPC verir.)
+export async function myInviteCount() {
+  const { data, error } = await supabase.rpc("my_invite_count");
+  if (error) { console.warn("[myInviteCount]", error.message); return 0; }
+  return Number(data) || 0;
 }
 
 // ── Reports (şikayet) ───────────────────────────────────────

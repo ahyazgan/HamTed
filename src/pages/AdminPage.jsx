@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Shield, Lock, Ban, Flag, FileText, FileCheck2, Trash2, Eye, CheckCircle2, X, Check, Smartphone, Fuel, Scale, AlertTriangle, ScrollText, Activity, Phone, StickyNote, UserX, Link2, PlusCircle, Clock, Target } from "lucide-react";
+import { Shield, Lock, Ban, Flag, FileText, FileCheck2, Trash2, Eye, CheckCircle2, X, Check, Smartphone, Fuel, Scale, AlertTriangle, ScrollText, Activity, Phone, StickyNote, UserX, Link2, PlusCircle, Clock, Target, Search, RotateCw } from "lucide-react";
 import { loadPricingConfig, savePricingConfig } from "../utils/storage";
 import { seasonFactor } from "../utils/priceEstimate";
 import { fmtTL } from "../utils/payments";
@@ -40,7 +40,7 @@ const fmt = (iso) => { try { return new Date(iso).toLocaleString("tr-TR", { day:
 
 const shortId = (id) => "YKL-" + String(id ?? "").slice(-4).toUpperCase().padStart(4, "0");
 
-const TABS = [["pulse", "Pano"], ["match", "Eşleştir"], ["reports", "Şikayet"], ["disputes", "İtiraz"], ["listings", "İlan"], ["announce", "Duyuru"], ["users", "Üye"], ["docs", "Belge"], ["pricing", "Finans"], ["audit", "Kayıt"]];
+const TABS = [["pulse", "Pano"], ["match", "Eşleştir"], ["talep", "Talep"], ["reports", "Şikayet"], ["disputes", "İtiraz"], ["listings", "İlan"], ["announce", "Duyuru"], ["users", "Üye"], ["docs", "Belge"], ["pricing", "Finans"], ["audit", "Kayıt"]];
 
 // "Son N gün içinde mi?" — tarihi olmayan satırlar (yerel mod tap'leri) sayılmaz.
 const DAY = 86400000;
@@ -69,6 +69,9 @@ const sonGorulme = (u) => {
   return k <= 0 ? "bugün kaydoldu, henüz girmedi" : `${k} gün önce kaydoldu, giriş kaydı yok`;
 };
 const ROL_ETIKET = { isveren: "Alıcı", tedarikci: "Satıcı", nakliyeci: "Nakliyeci" };
+// "Aracım bugün müsait" — damga gün sonuna yazılır, geçmişse müsaitlik düşmüştür.
+// Beyan edilmiş boş kapasite; eşleştirmede tahminlerin hepsinden değerli sinyal.
+const musaitMi = (u) => Boolean(u?.availableUntil) && new Date(u.availableUntil).getTime() > Date.now();
 
 // ── İlan kalite bayrakları — "telefonla arayıp düzelttirilecek" listesi ──
 // Fotoğraf alanı ilan modelinde YOK; o yüzden bayraklanmaz.
@@ -114,7 +117,7 @@ const btnBase = {
   letterSpacing: "-0.01em", lineHeight: 1, whiteSpace: "nowrap",
 };
 
-export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [] }) {
+export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [], searchSignals = [], onRunRecurrences }) {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const toast = useToast();
@@ -147,6 +150,18 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
   const [uSeg, setUSeg] = useState("hepsi");               // Üye durum segmenti
   const [uRole, setURole] = useState("hepsi");             // Üye rol segmenti
   const [matchId, setMatchId] = useState(null);            // Eşleştir: seçili iş ilanı
+  const [recurBusy, setRecurBusy] = useState(false);       // düzenli seferler işleniyor
+  // Düzenli sevkiyat: sırası gelmiş tüm seferleri aç. Sonucu DÜRÜST bildir —
+  // "0 sefer" de bilgidir (sıra henüz gelmemiş ya da önceki sefer hâlâ açık).
+  const runRecurrings = async () => {
+    setRecurBusy(true);
+    try {
+      const res = await onRunRecurrences?.();
+      if (res && res.ok === false) { toast?.(res.error || "İşlenemedi", "error"); return; }
+      const n = res?.count ?? 0;
+      toast?.(n > 0 ? `${n} düzenli sefer açıldı` : "Sırası gelen sefer yok", n > 0 ? "success" : "info");
+    } finally { setRecurBusy(false); }
+  };
   // Duyuru formu: admin DOKUNANA KADAR yayındaki duyuruyu aynalar (annDraft null).
   // SB'de duyuru app_config'ten ASENKRON gelir; snapshot state kullansaydık panel
   // erken açıldığında boş form görünür ve kaydedince yayındaki duyuruyu ezerdi.
@@ -515,13 +530,19 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
               const iller = [sel.il, sel.varisIl].filter(Boolean);
               const ilUyum = iller.some((x) => u.sehir === x || bolge.includes(x));
               const teklifVerdi = offers.some((o) => String(o.listingId) === String(sel.id) && String(o.fromUserId) === String(u.id));
+              // "Bugün müsaidim" diyen nakliyeci ARAMA LİSTESİNİN BAŞIDIR:
+              // beyan edilmiş boş kapasite, tahmin edilen uygunluktan üstün.
+              // Puanı tür+bölge toplamından (6) büyük tutuyoruz ki müsait olan
+              // her koşulda üste çıksın.
+              const musait = musaitMi(u);
               let score = 0;
+              if (musait) score += 7;
               if (hc === sel.cat) score += 3; else if (!hc) score += 1;
               if (ilUyum) score += 3;
               if (u.verified) score += 1;
               if (within(aktiflik(u), 7)) score += 1;
               if (teklifVerdi) score -= 5;   // zaten teklif verdi, önce diğerlerini ara
-              return { u, hc, ilUyum, teklifVerdi, score };
+              return { u, hc, ilUyum, teklifVerdi, musait, score };
             })
             .filter((c) => !c.hc || c.hc === sel.cat)
             .sort((a, b) => b.score - a.score)
@@ -558,10 +579,15 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {adaylar.map((c, i) => (
-                        <div key={c.u.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `2px solid ${c.teklifVerdi ? C.border : C.ink}`, borderRadius: 6, padding: "9px 12px", boxShadow: c.teklifVerdi ? "none" : "3px 3px 0 rgba(10,10,10,.10)", opacity: c.teklifVerdi ? 0.7 : 1 }}>
+                        <div key={c.u.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `2px solid ${c.teklifVerdi ? C.border : c.musait ? C.green : C.ink}`, borderRadius: 6, padding: "9px 12px", boxShadow: c.teklifVerdi ? "none" : c.musait ? "3px 3px 0 #16803C" : "3px 3px 0 rgba(10,10,10,.10)", opacity: c.teklifVerdi ? 0.7 : 1 }}>
                           <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 4, background: i === 0 && !c.teklifVerdi ? C.yellow : C.stone, border: `2px solid ${C.ink}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.ink }}>{i + 1}</span>
                           <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 800, textTransform: "uppercase", color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.u.name || c.u.email}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ minWidth: 0, fontFamily: HEAD, fontSize: 12.5, fontWeight: 800, textTransform: "uppercase", color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.u.name || c.u.email}</span>
+                              {c.musait && (
+                                <span style={{ flexShrink: 0, background: C.green, color: "#fff", fontFamily: MONO, fontSize: 8.5, fontWeight: 700, letterSpacing: "0.04em", padding: "2px 5px", borderRadius: 3 }}>BUGÜN MÜSAİT</span>
+                              )}
+                            </div>
                             <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {c.hc === sel.cat ? "tür ✓" : "tür ?"} · {c.ilUyum ? "bölge ✓" : "bölge ?"} · {c.u.sehir || "il yok"} · {sonGorulme(c.u)}
                               {c.teklifVerdi ? " · zaten teklif verdi" : ""}
@@ -580,6 +606,63 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                   )}
                 </div>
               )}
+            </div>
+          );
+        })()}
+
+        {/* ── TALEP: "aradı ama bulamadı" — sonraki saha turunun adresi ── */}
+        {/* Bu sekmenin verisi geriye dönük TOPLANAMAZ: kullanıcı arar, ekran
+            boş gelir, bilgi buhar olur. Ne kadar erken başlanırsa o kadar
+            kıymetli. "Bergama · mıcır · 14 arama" → o ocağı onboard et. */}
+        {tab === "talep" && (() => {
+          if (searchSignals.length === 0) {
+            return <Empty icon={Search} text="Henüz sonuçsuz arama kaydı yok. (Migration koşulmadıysa da boş görünür.)" />;
+          }
+          const catAd = (c) => (c === "hafriyat" ? "Hafriyat" : c === "silobas" ? "Silobas" : "Tümü");
+          // Gruplama: kategori + malzeme + il. Aynı boşluğu kaç FARKLI kişi
+          // aradı da ayrıca sayılır — 14 aramanın 1 kişiden gelmesi başka şey.
+          const grup = {};
+          for (const s of searchSignals) {
+            const k = [s.cat || "all", s.material || "", s.il || ""].join("|");
+            if (!grup[k]) grup[k] = { cat: s.cat, material: s.material, il: s.il, n: 0, kisi: new Set(), sorgular: new Set(), son: s.createdAt };
+            const g = grup[k];
+            g.n += 1;
+            g.kisi.add(String(s.userId || "anon-" + g.n));
+            if (s.q) g.sorgular.add(s.q);
+            if (!g.son || String(s.createdAt) > String(g.son)) g.son = s.createdAt;
+          }
+          const rows = Object.values(grup).sort((a, b) => b.n - a.n).slice(0, 30);
+          const hafta = searchSignals.filter((s) => within(s.createdAt, 7)).length;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontFamily: MONO, fontSize: 10.5, color: C.muted, lineHeight: 1.5 }}>
+                Sonuçsuz aramalar. Her satır “bu bölgede bu malı arayan var ama arz yok” demektir — sıradaki ocak ziyaretinin adresi.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 9 }}>
+                {[{ label: "Boş Arama · 7g", value: hafta }, { label: "Farklı Boşluk", value: Object.keys(grup).length }].map((k) => (
+                  <div key={k.label} style={{ background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px", boxShadow: "3px 3px 0 rgba(10,10,10,.12)" }}>
+                    <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, lineHeight: 1, color: k.value ? C.red : C.ink }}>{k.value}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.muted, marginTop: 6 }}>{k.label}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {rows.map((g, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "10px 12px", boxShadow: "3px 3px 0 rgba(10,10,10,.10)" }}>
+                    <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 4, background: i === 0 ? C.yellow : C.stone, border: `2px solid ${C.ink}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.ink }}>{i + 1}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 800, textTransform: "uppercase", color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {[g.il || "il farketmez", g.material || catAd(g.cat)].filter(Boolean).join(" · ")}
+                      </div>
+                      <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {catAd(g.cat)} · {g.kisi.size} kişi · son: {fmt(g.son)}
+                        {g.sorgular.size ? ` · “${[...g.sorgular].slice(0, 2).join("”, “")}”` : ""}
+                      </div>
+                    </div>
+                    <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.red }}>{g.n} arama</span>
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })()}
@@ -734,6 +817,15 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                   style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.ink }} />
                 <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{rows.length}</span>
               </div>
+              {/* DÜZENLİ SEFERLER — üye uygulamayı hiç açmasa da sırası gelen
+                  tekrar açılsın. Sunucu zaten atomik; buradan tetiklemek saha
+                  turunda "bu hafta ki seferler düştü mü" sorusunu 1 dokunuşa indirir. */}
+              {onRunRecurrences && (
+                <button onClick={runRecurrings} disabled={recurBusy}
+                  style={{ ...btnBase, justifyContent: "center", padding: "10px 12px", opacity: recurBusy ? 0.6 : 1 }}>
+                  <RotateCw size={13} strokeWidth={2.4} /> {recurBusy ? "İşleniyor…" : "Düzenli seferleri işlet"}
+                </button>
+              )}
               {/* KALİTE KUYRUĞU — eksik bilgili aktif ilanlar: telefonla arayıp düzelttirmek için */}
               <button onClick={() => setOnlyFlagged((v) => !v)}
                 style={{ ...btnBase, justifyContent: "center", background: onlyFlagged ? C.red : C.card, color: onlyFlagged ? "#fff" : C.ink, padding: "10px 12px" }}>
@@ -913,9 +1005,11 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
             ilansiz: (u) => !ilanAcanIds.has(String(u.id)),
             eslesmemis: (u) => ilanAcanIds.has(String(u.id)) && !eslesmisIds.has(String(u.id)),
             telsiz: (u) => !isValidPhone(u.phone),
+            // Bugün boş kapasitesini BEYAN edenler — arama turunun ilk sırası.
+            musait: (u) => musaitMi(u),
             banli: (u) => u.status === "banli",
           };
-          const SEG_ETIKET = [["hepsi", "Hepsi"], ["uyuyan", "7g girmedi"], ["ilansiz", "İlan açmadı"], ["eslesmemis", "Eşleşmedi"], ["telsiz", "Telefonsuz"], ["banli", "Banlı"]];
+          const SEG_ETIKET = [["hepsi", "Hepsi"], ["musait", "Bugün müsait"], ["uyuyan", "7g girmedi"], ["ilansiz", "İlan açmadı"], ["eslesmemis", "Eşleşmedi"], ["telsiz", "Telefonsuz"], ["banli", "Banlı"]];
           // Çip sayıları rol filtresi + aramadan SONRAKİ küme üzerinden sayılır —
           // aksi halde çipte 12 yazarken listede 3 satır çıkıyordu.
           const havuz = users
@@ -962,6 +1056,8 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
               const nListings = listings.filter((l) => String(l.ownerId) === String(u.id)).length;
               const nOffers = offers.filter((o) => String(o.fromUserId) === String(u.id)).length;
               const nextRole = { isveren: "tedarikci", tedarikci: "nakliyeci", nakliyeci: "isveren" };
+              const getiren = u.invitedBy ? ownerById[String(u.invitedBy)] : null;
+              const davetSayisi = users.filter((x) => String(x.invitedBy) === String(u.id)).length;
               return (
                 <div key={u.id} style={{ background: C.card, border: `2px solid ${banned ? C.red : C.ink}`, borderRadius: 6, padding: 12, boxShadow: "3px 3px 0 rgba(10,10,10,.12)", opacity: banned ? 0.85 : 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -974,10 +1070,19 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                       <div style={{ fontFamily: MONO, fontSize: 10, color: within(aktiflik(u), 7) ? C.green : C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
                         <Clock size={10} strokeWidth={2.6} /> {sonGorulme(u)}{u.sehir ? ` · ${u.sehir}` : ""}
                       </div>
+                      {/* Davet zinciri: bu üyeyi kim getirdi. Saha turunda hangi
+                          ocağın/nakliyecinin ağının çalıştığını gösterir. */}
+                      {getiren && (
+                        <div style={{ fontFamily: MONO, fontSize: 10, color: C.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          ↳ getiren: <b style={{ color: C.ink }}>{getiren.name || getiren.email}</b>
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display: "flex", flexShrink: 0, gap: 6 }}>
+                    <div style={{ display: "flex", flexShrink: 0, flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
                       {banned && <Badge bg={C.red} fg="#fff" dot>BANLI</Badge>}
                       {u.verified && !banned && <Badge bg={C.green} fg="#fff"><Check size={11} strokeWidth={3} /> Onaylı</Badge>}
+                      {musaitMi(u) && <Badge bg={C.green} fg="#fff">MÜSAİT</Badge>}
+                      {davetSayisi > 0 && <Badge bg={C.yellow} fg={C.ink}>{davetSayisi} davet</Badge>}
                     </div>
                   </div>
                   {/* admin aksiyonları */}

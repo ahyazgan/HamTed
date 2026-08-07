@@ -19,6 +19,7 @@ import { visibleReviewsFor } from "./utils/reviewGate";
 import { newId, nowIso } from "./utils/id";
 import { isAdmin } from "./utils/admin";
 import { Capacitor } from "@capacitor/core";
+import { Analytics } from "@vercel/analytics/react";
 import { isSupabaseConfigured } from "./lib/supabase";
 import * as api from "./lib/api";
 import { chargeToEscrow, releaseFromEscrow, refundEscrow } from "./lib/paymentProvider";
@@ -1380,6 +1381,13 @@ export default function App() {
       <ToastProvider>
         <AppShell />
       </ToastProvider>
+      {/* Vercel Web Analytics — YALNIZ web (yuklet.co). Native kabukta beacon
+          /_vercel/insights adresine gider, o adres app paketinde YOKTUR: her
+          sayfa gecisinde bosa giden basarisiz istek olurdu. Cerezsiz ve
+          kisisel veri toplamaz; SPA rota degisimlerini kendisi izler.
+          NOT: Vercel panelindeki ornek Next.js icindir (@vercel/analytics/next);
+          bu proje Vite + React — dogru giris noktasi /react. */}
+      {!Capacitor.isNativePlatform() && <Analytics />}
     </BrowserRouter>
   );
 }

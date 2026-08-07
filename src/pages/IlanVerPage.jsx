@@ -163,7 +163,7 @@ function MaterialPicker({ materials, value, onChange }) {
   );
 }
 
-export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers = [], reviews = [], user, users = [], fleet = [], onRequireAuth, onUpdateProfile }) {
+export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers = [], reviews = [], user, users = [], prospects = [], fleet = [], onRequireAuth, onUpdateProfile }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const editing = Boolean(id);
@@ -185,8 +185,23 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
   // yenilendi → users henüz yüklenmemiş, ya da id yanlış/üye silinmiş). Sessizce
   // normal akışa DÜŞME — ilan admin'in kendi adına açılır ve kimse fark etmez.
   const adinaCozulemedi = Boolean(adinaId) && !asUser;
-  // actor: ilanın SAHİBİ olacak kişi (normalde kullanıcının kendisi).
-  const actor = asUser || user;
+
+  // ── VİTRİN İLANI (yalnız admin) — /ilan-ver?aday=<adayId> ────────
+  // Saha aday kaydı: firma HENÜZ ÜYE DEĞİL (hesabı yok, profil açılamıyor).
+  // İlan SAHİPSİZ doğar (owner_id null) + prospect_id ile adaya bağlanır;
+  // iletişim saha hattına düşer, kabul edilemez. Firma davet linkiyle hesabını
+  // açınca claim_prospect ilanı ona devreder. Rol/tür kuralı adayın rolünden.
+  const adayId = !editing ? sp.get("aday") : null;
+  const asProspect = (adayId && isAdmin(user))
+    ? prospects.find((p) => String(p.id) === String(adayId)) || null
+    : null;
+  // Aynı güvenlik kapısı: URL "aday" diyor ama kayıt çözülemedi (sayfa doğrudan
+  // yenilendi → prospects henüz yüklenmedi, ya da id yanlış). Sessizce admin'in
+  // kendi adına ilan AÇMA — sahiplik sessizce kaymasın.
+  const adayCozulemedi = Boolean(adayId) && !asProspect;
+  // actor: ilanın SAHİBİ olacak kişi. Vitrin ilanında gerçek sahip yok; rol-tür
+  // kuralı adayın rolünden işlesin diye aday sahte bir "actor" gibi kullanılır.
+  const actor = asUser || asProspect || user;
 
   // Rol = ilan türü. Alıcı iş ilanı, satıcı ürün ilanı, nakliyeci araç ilanı açar.
   // Kullanıcı türü seçmez; rolünden gelir. Bu yüzden state değil, sabit türetim.
@@ -223,7 +238,11 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
     stock: editListing.stock || "bol",
     deliveryIncluded: editListing.deliveryIncluded || false,
   } : {
-    title: pf.title || "", il: pf.il || "İstanbul", ilce: pf.ilce || "", varisIl: pf.varisIl || pf.il || "İstanbul",
+    // Vitrin ilanında il/ilçe aday kaydından ön-dolu gelir: saha turunda aynı
+    // bilgiyi ikinci kez yazmak zaman kaybı ve hata kaynağı.
+    title: pf.title || "",
+    il: pf.il || asProspect?.il || "İstanbul", ilce: pf.ilce || asProspect?.ilce || "",
+    varisIl: pf.varisIl || pf.il || asProspect?.il || "İstanbul",
     yukleme: pf.yukleme || "", bosaltma: pf.bosaltma || "",
     material: pf.material || "", amount: pf.amount || "", unit: pf.unit || "ton", vehicle: "", capacity: "",
     dateText: "", priceType: "sabit", price: "", desc: pf.desc || "", owner: actor?.name || "",
@@ -269,7 +288,9 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
     // ADINA İLAN: telefon/değerlendirme kapıları admin'in kendi hesabına ait
     // olur, hedef üyeye değil — bu modda ikisi de atlanır (admin üyeyi telefonda
     // onboard ediyor; numarayı zaten elinde tutuyor).
-    if (asUser) return true;
+    // VİTRİN İLANI da aynı: aday firmanın hesabı bile yok, admin'in kendi
+    // telefon/değerlendirme durumunun bu ilanla hiçbir ilgisi yok.
+    if (asUser || asProspect) return true;
     // Telefon zorunlu: geçerli cep numarası yoksa akış içinde girdirilir.
     if (!isValidPhone(user.phone)) { setNeedPhone(true); return false; }
     const pend = pendingReviews(user, listings, offers, reviews);
@@ -341,20 +362,23 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       // Adına ilanda admin'in YAZDIĞI ad ilanda görünür: ocak sahibinin profil adı
       // kişisel olabilir ("Mehmet Kaya") ama ilan firma adıyla çıkmalı
       // ("Kaya Hafriyat"). Normal akışta davranış birebir eskisi gibi.
-      owner: (asUser && form.owner.trim()) || actor?.name || form.owner.trim(),
-      ownerNameOverride: (asUser && form.owner.trim()) || undefined,
-      ownerId: actor?.id,
-      ownerVerified: actor?.verified || false,
-      ownerRating: actor?.rating || 5.0,
-      ownerLogo: actor?.logo || "",
+      owner: ((asUser || asProspect) && form.owner.trim()) || actor?.name || form.owner.trim(),
+      ownerNameOverride: ((asUser || asProspect) && form.owner.trim()) || undefined,
+      // VİTRİN İLANI SAHİPSİZ doğar: aday firmanın hesabı yok ve actor.id bir üye
+      // kimliği DEĞİL (aday satırının numarası) — sahip alanlarına yazılamaz.
+      ownerId: asProspect ? null : actor?.id,
+      ownerVerified: asProspect ? false : (actor?.verified || false),
+      ownerRating: asProspect ? 5.0 : (actor?.rating || 5.0),
+      ownerLogo: asProspect ? "" : (actor?.logo || ""),
       status: "aktif", offers: 0, createdText: "az önce", createdAt: new Date().toISOString(),
     };
     setSaving(true);
     try {
       // Başarı ekranı yalnızca gerçekten kaydedildiyse gösterilir.
       // SB modunda onPublish DB id'li gerçek ilanı döndürür; onu kullan.
-      // 2. argüman: adına ilan verilen üye (yoksa null → normal akış).
-      const saved = (await onPublish?.(listing, asUser)) || listing;
+      // 2. argüman: adına ilan verilen ÜYE, 3. argüman: vitrin ilanı açılan ADAY
+      // firma (ikisi de yoksa null → normal akış, davranış birebir eskisi gibi).
+      const saved = (await onPublish?.(listing, asUser, asProspect)) || listing;
       setPublished(saved);
       setStep(3);
       hapticSuccess();
@@ -410,17 +434,19 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       // Adına ilanda admin'in YAZDIĞI ad ilanda görünür: ocak sahibinin profil adı
       // kişisel olabilir ("Mehmet Kaya") ama ilan firma adıyla çıkmalı
       // ("Kaya Hafriyat"). Normal akışta davranış birebir eskisi gibi.
-      owner: (asUser && form.owner.trim()) || actor?.name || form.owner.trim(),
-      ownerNameOverride: (asUser && form.owner.trim()) || undefined,
-      ownerId: actor?.id,
-      ownerVerified: actor?.verified || false,
-      ownerRating: actor?.rating || 5.0,
-      ownerLogo: actor?.logo || "",
+      owner: ((asUser || asProspect) && form.owner.trim()) || actor?.name || form.owner.trim(),
+      ownerNameOverride: ((asUser || asProspect) && form.owner.trim()) || undefined,
+      // VİTRİN İLANI SAHİPSİZ doğar: aday firmanın hesabı yok ve actor.id bir üye
+      // kimliği DEĞİL (aday satırının numarası) — sahip alanlarına yazılamaz.
+      ownerId: asProspect ? null : actor?.id,
+      ownerVerified: asProspect ? false : (actor?.verified || false),
+      ownerRating: asProspect ? 5.0 : (actor?.rating || 5.0),
+      ownerLogo: asProspect ? "" : (actor?.logo || ""),
       status: "aktif", offers: 0, createdText: "az önce", createdAt: new Date().toISOString(),
     };
     setSaving(true);
     try {
-      const saved = (await onPublish?.(listing, asUser)) || listing;
+      const saved = (await onPublish?.(listing, asUser, asProspect)) || listing;
       setPublished(saved);
       setStep(3);
       hapticSuccess();
@@ -436,7 +462,7 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
   // Filo: kullanıcının bu kategorideki aktif araçları — ilana hızlı seçim için.
   // fleet App'ten owner-filtreli (myFleet) gelir; burada kategori+aktif süzgeci.
   // Adına ilanda filo kısayolu gizlenir — fleet admin'in KENDİ araçları, hedef üyenin değil.
-  const myFleet = user && !asUser
+  const myFleet = user && !asUser && !asProspect
     ? fleet.filter((v) => v.active && v.cat === cat)
     : [];
   const pickFleet = (v) => { set("vehicle", v.vehicle); if (v.capacity) set("capacity", v.capacity); };
@@ -467,6 +493,22 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
           <h1 style={{ margin: 0, fontFamily: ARCH, fontSize: 20, fontWeight: 900, textTransform: "uppercase" }}>Üye bulunamadı</h1>
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: C.sub }}>
             Adına ilan açılacak üye çözülemedi. Bu sayfayı doğrudan açtıysan üye listesi henüz yüklenmemiş olabilir — panele dönüp üye kartındaki <b>Adına ilan ver</b> düğmesini kullan.
+          </p>
+          <button onClick={() => navigate("/admin")} style={{ background: C.ink, color: C.yellow, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 20px", cursor: "pointer" }}>Panele dön</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── gate: vitrin ilanının aday firması çözülemedi ──
+  // Aynı gerekçe: sessizce admin'in kendi adına ilan açıp sahipliği kaydırma.
+  if (adayCozulemedi) {
+    return (
+      <div style={{ ...shell, paddingBottom: 96 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "72px 24px 0", textAlign: "center" }}>
+          <h1 style={{ margin: 0, fontFamily: ARCH, fontSize: 20, fontWeight: 900, textTransform: "uppercase" }}>Aday firma bulunamadı</h1>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: C.sub }}>
+            Vitrin ilanı açılacak aday firma çözülemedi. Bu sayfayı doğrudan açtıysan aday listesi henüz yüklenmemiş olabilir — panele dönüp <b>Saha</b> sekmesindeki <b>+ Vitrin ilanı</b> düğmesini kullan.
           </p>
           <button onClick={() => navigate("/admin")} style={{ background: C.ink, color: C.yellow, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 20px", cursor: "pointer" }}>Panele dön</button>
         </div>
@@ -519,9 +561,17 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             <Check size={38} color="#fff" strokeWidth={3} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontFamily: ARCH, fontSize: 24, fontWeight: 900, letterSpacing: "-0.02em", textTransform: "uppercase" }}>{asUser ? "İlan yayında!" : "İlanın yayında!"}</h1>
+            <h1 style={{ margin: 0, fontFamily: ARCH, fontSize: 24, fontWeight: 900, letterSpacing: "-0.02em", textTransform: "uppercase" }}>{asProspect ? "Vitrin ilanı hazır!" : asUser ? "İlan yayında!" : "İlanın yayında!"}</h1>
             {asUser && <p style={{ margin: "8px 0 0", fontSize: 14, fontWeight: 700, color: C.ink }}>İlan <b>{asUser.name || asUser.email}</b> adına açıldı — düzenlemeyi o yapabilir.</p>}
-            <p style={{ margin: "8px 0 0", fontSize: 14, color: C.sub }}>{isUrun ? "Alıcılar artık ürününü görebilir ve iletişime geçebilir." : published?.type === "arac" ? "Alıcılar aracını sabit fiyattan doğrudan kiralayabilir." : "Nakliyeciler işini sabit fiyattan doğrudan kabul edebilir."}</p>
+            {asProspect && (
+              <p style={{ margin: "8px 0 0", fontSize: 14, fontWeight: 700, color: C.ink }}>
+                <b>{asProspect.name}</b> adına vitrin ilanı.{" "}
+                {asProspect.status === "yayinda"
+                  ? "Panoda görünüyor; iletişim saha hattı üzerinden."
+                  : "Aday henüz yayında değil — panelde “Rıza alındı” + “Yayınla” dedikten sonra panoya çıkar."}
+              </p>
+            )}
+            <p style={{ margin: "8px 0 0", fontSize: 14, color: C.sub }}>{asProspect ? "Firma davet linkiyle hesabını açtığında bu ilan ona geçecek." : isUrun ? "Alıcılar artık ürününü görebilir ve iletişime geçebilir." : published?.type === "arac" ? "Alıcılar aracını sabit fiyattan doğrudan kiralayabilir." : "Nakliyeciler işini sabit fiyattan doğrudan kabul edebilir."}</p>
           </div>
 
           {/* summary card — dark header block + hazard stripe */}
@@ -552,8 +602,8 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
               <Share2 size={16} /> Paylaş
             </button>
             {/* Adına ilanda "Düzenle" admin'i "yetkiniz yok" duvarına götürürdü (sahip üye) — panele dön. */}
-            <button onClick={() => navigate(asUser ? "/admin" : `/ilan-duzenle/${published.id}`)} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: C.card, color: C.ink, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 0", cursor: "pointer" }}>
-              {asUser ? <><Shield size={16} /> Panele dön</> : <><Pencil size={16} /> Düzenle</>}
+            <button onClick={() => navigate(asUser || asProspect ? "/admin" : `/ilan-duzenle/${published.id}`)} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: C.card, color: C.ink, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 0", cursor: "pointer" }}>
+              {asUser || asProspect ? <><Shield size={16} /> Panele dön</> : <><Pencil size={16} /> Düzenle</>}
             </button>
           </div>
 
@@ -600,6 +650,17 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
       {/* ──────────────── STEP 1: ne taşınacak + ilan türü ──────────────── */}
       {step === 1 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 22, padding: 16 }}>
+
+          {/* VİTRİN İLANI uyarısı — bu ilan sahipsiz doğuyor, kabul edilemiyor */}
+          {asProspect && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.yellow, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "11px 13px", boxShadow: "3px 3px 0 rgba(10,10,10,.18)" }}>
+              <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.ink, lineHeight: 1.45 }}>
+                SAHA KAYDI — <b>{asProspect.name}</b> ({{ isveren: "alıcı", tedarikci: "satıcı", nakliyeci: "nakliyeci" }[asProspect.role] || "rolsüz"}).
+                Vitrin ilanı: iletişim saha hattına düşer, kimse doğrudan kabul edemez.
+                {asProspect.status !== "yayinda" && " Aday henüz yayında değil — ilan kapalı açılır."}
+              </span>
+            </div>
+          )}
 
           {/* ADINA İLAN uyarısı — admin yanlışlıkla kendi adına açtığını sanmasın */}
           {asUser && (
@@ -809,6 +870,7 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             <Field label="Ad / Firma *">
               <input style={fieldBox} value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Örn: Aliağa Mıcır Ocağı" />
               {asUser && <div style={{ fontFamily: MONO, fontSize: 10, color: C.sub, marginTop: 5, lineHeight: 1.45 }}>İlanda görünecek ad. Üyenin profil adı: <b>{asUser.name || "—"}</b></div>}
+              {asProspect && <div style={{ fontFamily: MONO, fontSize: 10, color: C.sub, marginTop: 5, lineHeight: 1.45 }}>İlanda görünecek ad. Aday kaydındaki firma: <b>{asProspect.name}</b></div>}
             </Field>
           </Block>
 
@@ -1000,6 +1062,7 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             <Field label="Ad / Firma *">
               <input style={fieldBox} value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Örn: Ertuğrul İnşaat" />
               {asUser && <div style={{ fontFamily: MONO, fontSize: 10, color: C.sub, marginTop: 5, lineHeight: 1.45 }}>İlanda görünecek ad. Üyenin profil adı: <b>{asUser.name || "—"}</b></div>}
+              {asProspect && <div style={{ fontFamily: MONO, fontSize: 10, color: C.sub, marginTop: 5, lineHeight: 1.45 }}>İlanda görünecek ad. Aday kaydındaki firma: <b>{asProspect.name}</b></div>}
             </Field>
           </Block>
 

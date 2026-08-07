@@ -132,6 +132,13 @@ export const appendSearchSignal = (sig) => {
 export const loadPendingInvite = () => loadStr("hamted_pending_invite", "");
 export const savePendingInvite = (v) => saveStr("hamted_pending_invite", v || "");
 export const clearPendingInvite = () => saveStr("hamted_pending_invite", "");
+// Saha aday kaydi jetonu: firma /?firma=TOKEN linkiyle geldi ama HENUZ giris
+// yapmadi. Jeton burada bekler; oturum acilinca claim_prospect ile aday kayit
+// + vitrin ilanlari o hesaba gecer. Davet kodunun birebir ikizi — ayri anahtar,
+// cunku ikisi ayni anda bekleyebilir (davetle gelen firma linkine de tiklayabilir).
+export const loadPendingProspect = () => loadStr("hamted_pending_prospect", "");
+export const savePendingProspect = (v) => saveStr("hamted_pending_prospect", v || "");
+export const clearPendingProspect = () => saveStr("hamted_pending_prospect", "");
 
 // Admin denetim kaydi (audit log) — kim, ne zaman, ne yapti.
 export const loadAuditLog = () => load("hamted_audit_log", []);

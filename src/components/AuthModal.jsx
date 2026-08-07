@@ -2,7 +2,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { loadKeepSession, saveKeepSession } from "../utils/storage";
+import { normalizePhone, isValidPhone } from "../lib/smsProvider";
 import Logo from "./Logo";
+
+// Profilde saklanan biçim 05XXXXXXXXX — PhoneGateModal ile birebir aynı olmalı,
+// yoksa aynı numara iki farklı biçimde kaydedilir ve isValidPhone kapısı tekrar açılır.
+const telFmt = (raw) => { const n = normalizePhone(raw); return n ? "0" + n : ""; };
 
 // Apple girişi yalnız iOS'ta gösterilir: Android'de Apple provider yapılandırılmadan
 // buton HER ZAMAN hata verir; App Store 4.8 kuralı da yalnız iOS'u bağlar.
@@ -60,17 +65,29 @@ function AppleIcon() {
   );
 }
 
-export default function AuthModal({ onClose, onProvider, onEmailAuth, onReset }) {
+export default function AuthModal({ onClose, onProvider, onEmailAuth, onReset, prospect = null }) {
   const navigate = useNavigate();
   const goLegal = (slug) => { onClose?.(); navigate(`/yasal/${slug}`); };
   const [busy, setBusy] = useState("");   // "google" | "apple" | "email" | ""
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");           // onay e-postası vb. bilgi mesajı
-  const [mode, setMode] = useState("login");      // "login" | "register" | "reset"
-  const [name, setName] = useState("");
+  // Saha davet linkiyle gelindiyse (?firma=TOKEN) doğrudan KAYIT açılsın:
+  // firma zaten "hesabını aç" çağrısına tıklamış, ona giriş formu göstermek
+  // fazladan bir adım — sahada kaybettiğimiz şey tam olarak bu adımlar.
+  // Saha daveti AKTİF mi? Zaten sahiplenilmiş bir link ile gelindiyse form
+  // normal giriş gibi davranır: o firma hesabını çoktan açmış, ona ikinci kez
+  // kayıt ekranı göstermek (ve rolünü kilitlemek) kafa karıştırır.
+  const sahaDavet = Boolean(prospect?.name) && !prospect.claimed;
+  const [mode, setMode] = useState(sahaDavet ? "register" : "login");
+  // Firma adı ön-dolu gelir: aday kaydında zaten var, tekrar yazdırmanın anlamı yok.
+  const [name, setName] = useState(sahaDavet ? prospect.name : "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("");          // "" | "isveren" | "tedarikci" | "nakliyeci"
+  // Telefon kayıtta toplanır. Daha önce hiç sorulmuyordu → üye ilk işini yapmaya
+  // kalkınca PhoneGateModal araya giriyordu. Saha davetinde o fazladan adım
+  // kaydı öldürür. Rol adaydan geliyorsa (saha daveti) rol kartları gizlenir.
+  const [phone, setPhone] = useState("");
+  const [role, setRole] = useState(sahaDavet ? prospect.role || "" : "");   // "" | "isveren" | "tedarikci" | "nakliyeci"
   // "Oturumum açık kalsın" — varsayılan AÇIK; jeton kalıcı depoda tutulur,
   // uygulama otomatik çıkış yapmaz. Anında kaydedilir ki Google/Apple
   // yönlendirmesi öncesi de geçerli olsun.
@@ -110,10 +127,13 @@ export default function AuthModal({ onClose, onProvider, onEmailAuth, onReset })
     if (!password) { setError("Şifre gerekli."); return; }
     if (mode === "register" && !name.trim()) { setError("Ad Soyad gerekli."); return; }
     if (mode === "register" && !role) { setError("Nasıl üye olacağını seç (Alıcı / Satıcı / Nakliyeci)."); return; }
+    // Telefon kayıtta ZORUNLU: ilan/teklif/sipariş akışlarının hepsi zaten geçerli
+    // numara istiyor (PhoneGateModal). En başta sormak, işin ortasında kesmekten iyi.
+    if (mode === "register" && !isValidPhone(normalizePhone(phone))) { setError("Geçerli cep numarası gir (5XX XXX XX XX)."); return; }
     if (password.length < 6) { setError("Şifre en az 6 karakter olmalı."); return; }
     setBusy("email");
     try {
-      const res = await onEmailAuth({ mode, name: name.trim(), email: email.trim(), password, role });
+      const res = await onEmailAuth({ mode, name: name.trim(), email: email.trim(), password, role, phone: telFmt(phone) });
       if (res && res.ok === false) { setError(res.error || "İşlem başarısız."); setBusy(""); return; }
       // Onay e-postası gerekiyorsa modal açık kalır, bilgi mesajı gösterilir.
       if (res && res.needsConfirm) { setInfo(res.message || "E-postanı kontrol et: onay bağlantısı gönderdik."); setBusy(""); return; }
@@ -165,6 +185,22 @@ export default function AuthModal({ onClose, onProvider, onEmailAuth, onReset })
             </p>
           </div>
 
+          {/* SAHA DAVETİ: /?firma=TOKEN ile gelindi. Firma kim olduğunu görsün —
+              "hangi uygulamaya kaydoluyorum" tereddüdü sahada kaydı öldürüyor.
+              Sunucu bu bilgide telefon/e-posta DÖNDÜRMEZ; yalnız ad + il. */}
+          {prospect?.name && (
+            <div className="mb-4 px-3 py-2.5" style={{ border: FRAME, borderRadius: 6, background: C.yellow }}>
+              <div className="text-[13px] font-extrabold uppercase" style={{ color: C.ink, fontFamily: ARCH, letterSpacing: "-0.01em" }}>
+                {prospect.name}
+              </div>
+              <div className="mt-0.5 text-[11px] font-bold leading-snug" style={{ color: C.ink, fontFamily: MONO }}>
+                {sahaDavet
+                  ? "adına hesap açıyorsun. Kaydolunca firma profilin ve ilanların bu hesaba geçecek."
+                  : "Bu firmanın hesabı zaten açılmış. Kendi hesabınla giriş yap."}
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 px-3 py-2.5 text-[12px] font-bold" style={{ border: `2px solid ${C.red}`, borderRadius: 6, color: C.red, background: "#FEF2F2", fontFamily: MONO }}>
               {error}
@@ -190,8 +226,24 @@ export default function AuthModal({ onClose, onProvider, onEmailAuth, onReset })
                 style={{ border: FRAME, borderRadius: 6, color: C.ink, fontFamily: MONO }}
               />
             )}
-            {/* Rol seçimi — kayıt olurken hangi rolde üye olunacağı sorulur */}
+            {/* Telefon — kayıtta zorunlu. Sahadaki kitle için bu alan e-postadan
+                bile doğal; sonradan PhoneGateModal ile kesmekten çok daha iyi. */}
             {mode === "register" && (
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Cep telefonu (5XX XXX XX XX)"
+                autoComplete="tel"
+                inputMode="tel"
+                disabled={Boolean(busy)}
+                className="px-3 py-3 text-[14px] outline-none disabled:opacity-60"
+                style={{ border: FRAME, borderRadius: 6, color: C.ink, fontFamily: MONO }}
+              />
+            )}
+            {/* Rol seçimi — kayıt olurken hangi rolde üye olunacağı sorulur.
+                Saha davetinde rol aday kaydından GELİR: bir adım daha az. */}
+            {mode === "register" && !(sahaDavet && prospect.role) && (
               <div>
                 <div className="mb-1.5 text-[11px] font-bold uppercase" style={{ color: C.sub, fontFamily: MONO, letterSpacing: "0.03em" }}>
                   Ne yapmak istiyorsun?

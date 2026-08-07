@@ -38,6 +38,10 @@ const rowToListing = (r) => ({
   vehicle: r.vehicle, capacity: r.capacity,
   priceType: r.price_type, price: r.price, desc: r.description,
   owner: r.owner_name, ownerId: r.owner_id, ownerLogo: r.owner_logo || "", ownerVerified: r.owner_verified, ownerRating: r.owner_rating,
+  // Saha aday kaydı: ownerId null + prospectId dolu = VİTRİN ilanı. Firma henüz
+  // üye değil; iletişim saha hattına düşer, kabul edilemez (accept_job reddeder).
+  // Firma hesabını açınca claim_prospect ownerId'yi yazar, prospectId iz olarak kalır.
+  prospectId: r.prospect_id ?? null,
   status: r.status, offers: r.offers_count, createdText: r.created_text, createdAt: r.created_at,
   km: r.km, pickup: r.pickup, dropoff: r.dropoff, phase: r.phase, tripsDone: r.trips_done,
   paymentStatus: r.payment_status, paymentAmount: r.payment_amount, paymentFee: r.payment_fee, paymentRef: r.payment_ref,
@@ -515,7 +519,11 @@ export async function createListing(data, profile) {
     owner_logo: profile?.logo || data.ownerLogo || "",   // logo snapshot (Storage URL)
     owner_verified: profile?.verified ?? false,
     owner_rating: profile?.rating ?? 5.0,
-    status: "aktif",
+    // Saha VİTRİN ilanı: sahibi henüz üye olmayan aday firmaya bağlanır (owner_id
+    // null kalır). Taslak adayın ilanı 'kapali' açılır — panoya ancak firma "evet"
+    // dedikten sonra (publish_prospect) çıkar.
+    prospect_id: data.prospectId ?? null,
+    status: data.statusOverride || "aktif",
     created_text: "az once",
   };
   const { data: out, error } = await supabase.from("listings").insert(row).select("*").single();
@@ -730,6 +738,82 @@ export async function myInviteCount() {
   const { data, error } = await supabase.rpc("my_invite_count");
   if (error) { console.warn("[myInviteCount]", error.message); return 0; }
   return Number(data) || 0;
+}
+
+// ── Saha aday kaydı (prospects) ──────────────────────────────
+// "Önce değer, sonra hesap": saha turunda görüşülen firma HENÜZ ÜYE DEĞİLKEN
+// sisteme girilir (profiles.id → auth.users FK olduğu için profil açılamaz).
+// Vitrin ilanları owner_id null + prospect_id ile yayınlanır; firma davet
+// linkiyle kendi hesabını açınca claim_prospect hepsini ona devreder.
+// Okuma/yazma RLS ile YALNIZ admin (prospects_admin_all).
+const rowToProspect = (r) => ({
+  id: r.id, token: r.token, name: r.name || "", role: r.role || "",
+  phone: r.phone || "", email: r.email || "",
+  il: r.il || "", ilce: r.ilce || "",
+  tesisTuru: r.tesis_turu || "", hakkinda: r.hakkinda || "", malzemeler: r.malzemeler || [],
+  note: r.note || "", status: r.status || "taslak",
+  consentAt: r.consent_at || null, consentNote: r.consent_note || "",
+  claimedBy: r.claimed_by || null, claimedAt: r.claimed_at || null,
+  createdBy: r.created_by || null, createdAt: r.created_at,
+});
+const PROSPECT_KEYMAP = {
+  name: "name", role: "role", phone: "phone", email: "email", il: "il", ilce: "ilce",
+  tesisTuru: "tesis_turu", hakkinda: "hakkinda", malzemeler: "malzemeler",
+  note: "note", status: "status", consentAt: "consent_at", consentNote: "consent_note",
+};
+
+export async function fetchProspects() {
+  const { data, error } = await supabase.from("prospects").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(rowToProspect);
+}
+
+export async function createProspect(patch, createdBy) {
+  const row = { ...mapPatch(patch, PROSPECT_KEYMAP), created_by: createdBy || null };
+  // Yeni aday DAİMA taslak doğar: rıza damgası olmadan yayına çıkamaz
+  // (prospects_consent_chk kısıtı zaten engeller, burada niyet açık dursun).
+  row.status = "taslak";
+  const { data, error } = await supabase.from("prospects").insert(row).select("*").single();
+  if (error) throw error;
+  return rowToProspect(data);
+}
+
+export async function updateProspect(id, patch) {
+  // .select ile 0-satır kontrolü: RLS engellerse Supabase hata FIRLATMAZ,
+  // sessizce 0 satır döner — panel sahte başarı göstermesin (adminUpdateProfile deseni).
+  const { data, error } = await supabase.from("prospects")
+    .update(mapPatch(patch, PROSPECT_KEYMAP)).eq("id", id).select("*");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("Aday kayıt güncellenemedi (yetki yok).");
+  return rowToProspect(data[0]);
+}
+
+// Vitrini canlıya al. Sunucu rıza damgası yoksa REDDEDER (kısıt + açık hata).
+export async function publishProspect(id) {
+  const { data, error } = await supabase.rpc("publish_prospect", { p_id: id });
+  if (error) throw error;
+  return data ? rowToProspect(data) : null;
+}
+export async function unpublishProspect(id) {
+  const { data, error } = await supabase.rpc("unpublish_prospect", { p_id: id });
+  if (error) throw error;
+  return data ? rowToProspect(data) : null;
+}
+
+// Davet linki karşılaması — KAYITSIZ da çağırabilir (kişi henüz üye değil).
+// Sunucu yalnız firma adı + rol + il döndürür; telefon/e-posta/not asla.
+export async function prospectByToken(token) {
+  const { data, error } = await supabase.rpc("prospect_by_token", { p_token: token });
+  if (error) { console.warn("[prospectByToken]", error.message); return null; }
+  return data || null;
+}
+
+// Sahiplenme: aday kaydı + vitrin ilanları çağıranın hesabına geçer.
+// Döner: { ok, reason, name, role, listings }
+export async function claimProspect(token) {
+  const { data, error } = await supabase.rpc("claim_prospect", { p_token: token });
+  if (error) { console.warn("[claimProspect]", error.message); return { ok: false, reason: "hata" }; }
+  return data || { ok: false, reason: "bos" };
 }
 
 // ── Reports (şikayet) ───────────────────────────────────────

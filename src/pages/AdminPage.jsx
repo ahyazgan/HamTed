@@ -10,6 +10,7 @@ import { isSupabaseConfigured } from "../lib/supabase";
 import { isAdmin, ADMIN_EMAILS } from "../utils/admin";
 import { haulerCategory } from "../utils/haulerCategory";
 import { isValidPhone } from "../lib/smsProvider";
+import { prospectShareUrl, prospectShareText, shareUrl } from "../native/share";
 import { PAYMENTS_ENABLED } from "../config/features";
 
 // ── SAHA Admin / moderasyon paneli — şikayetler, belge doğrulama, kullanıcılar.
@@ -40,7 +41,20 @@ const fmt = (iso) => { try { return new Date(iso).toLocaleString("tr-TR", { day:
 
 const shortId = (id) => "YKL-" + String(id ?? "").slice(-4).toUpperCase().padStart(4, "0");
 
-const TABS = [["pulse", "Pano"], ["match", "Eşleştir"], ["talep", "Talep"], ["reports", "Şikayet"], ["disputes", "İtiraz"], ["listings", "İlan"], ["announce", "Duyuru"], ["users", "Üye"], ["docs", "Belge"], ["pricing", "Finans"], ["audit", "Kayıt"]];
+const TABS = [["pulse", "Pano"], ["saha", "Saha"], ["match", "Eşleştir"], ["talep", "Talep"], ["reports", "Şikayet"], ["disputes", "İtiraz"], ["listings", "İlan"], ["announce", "Duyuru"], ["users", "Üye"], ["docs", "Belge"], ["pricing", "Finans"], ["audit", "Kayıt"]];
+
+// ── SAHA ADAY KAYDI ─────────────────────────────────────────────────
+// Ziyaret edilen ama henüz üye OLMAYAN firmalar. profiles.id → auth.users FK
+// olduğu için bunlara hesap açılamaz; ayrı tabloda dururlar, vitrin ilanları
+// sahipsiz yayınlanır ve firma davet linkiyle hesabını açınca ona devredilir.
+const PROSPECT_ROLES = [["tedarikci", "Satıcı (ocak)"], ["nakliyeci", "Nakliyeci"], ["isveren", "Alıcı"]];
+const PROSPECT_STATUS = {
+  taslak:       { label: "TASLAK",       bg: "#F4F1EA", fg: "#0A0A0A" },
+  yayinda:      { label: "YAYINDA",      bg: "#16803C", fg: "#FFFFFF" },
+  sahiplenildi: { label: "SAHİPLENİLDİ", bg: "#FACC15", fg: "#0A0A0A" },
+  kapali:       { label: "KAPALI",       bg: "#E3DDD0", fg: "#5A5852" },
+};
+const BOS_ADAY = { name: "", role: "tedarikci", phone: "", email: "", il: "", ilce: "", tesisTuru: "", hakkinda: "", malzemeler: [], note: "" };
 
 // "Son N gün içinde mi?" — tarihi olmayan satırlar (yerel mod tap'leri) sayılmaz.
 const DAY = 86400000;
@@ -117,7 +131,7 @@ const btnBase = {
   letterSpacing: "-0.01em", lineHeight: 1, whiteSpace: "nowrap",
 };
 
-export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [], searchSignals = [], onRunRecurrences }) {
+export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [], searchSignals = [], onRunRecurrences, prospects = [], onSaveProspect, onProspectConsent, onPublishProspect, sahaHatti = "", onSaveSahaHatti }) {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const toast = useToast();
@@ -151,6 +165,40 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
   const [uRole, setURole] = useState("hepsi");             // Üye rol segmenti
   const [matchId, setMatchId] = useState(null);            // Eşleştir: seçili iş ilanı
   const [recurBusy, setRecurBusy] = useState(false);       // düzenli seferler işleniyor
+  // ── Saha sekmesi ────────────────────────────────────────────────
+  // adayForm: null = kapalı, {id:null,...} = yeni aday, {id:N,...} = düzenleme.
+  const [adayForm, setAdayForm] = useState(null);
+  const [adayBusy, setAdayBusy] = useState(false);
+  const [hatDraft, setHatDraft] = useState(sahaHatti);
+  useEffect(() => { setHatDraft(sahaHatti); }, [sahaHatti]);
+  const kaydetAday = async () => {
+    if (!adayForm?.name?.trim()) { toast?.("Firma adı zorunlu.", "error"); return; }
+    setAdayBusy(true);
+    const { id, ...patch } = adayForm;
+    const res = await onSaveProspect?.(id || null, { ...patch, name: patch.name.trim() });
+    setAdayBusy(false);
+    if (res?.ok === false) { toast?.(res.error || "Kaydedilemedi", "error"); return; }
+    toast?.(id ? "Aday kayıt güncellendi" : "Aday kayıt açıldı", "success");
+    setAdayForm(null);
+  };
+  // Rıza: firma "evet" dedi. Yayın kapısının anahtarı bu — sunucu rıza damgası
+  // olmadan 'yayinda' satırı yazdırmıyor (prospects_consent_chk).
+  const rizaAl = async (p) => {
+    const not = window.prompt("Rıza nasıl alındı? (örn: 12.08 ziyaret, WhatsApp onayı ekran görüntüsü)", p.consentNote || "");
+    if (not === null) return;
+    const res = await onProspectConsent?.(p.id, not);
+    toast?.(res?.ok === false ? (res.error || "Kaydedilemedi") : "Rıza kaydedildi", res?.ok === false ? "error" : "success");
+  };
+  const yayinDegistir = async (p) => {
+    const yayinla = p.status !== "yayinda";
+    const res = await onPublishProspect?.(p.id, yayinla);
+    toast?.(res?.ok === false ? (res.error || "İşlem başarısız") : (yayinla ? "Vitrin yayında" : "Vitrin geri alındı"), res?.ok === false ? "error" : "success");
+  };
+  const davetPaylas = async (p) => {
+    const url = prospectShareUrl(p.token);
+    const r = await shareUrl({ title: "YÜKLET", text: prospectShareText(p), url });
+    toast?.(r === "copied" ? "Davet linki panoya kopyalandı" : r === "failed" ? "Paylaşılamadı" : "Paylaşıldı", r === "failed" ? "error" : "success");
+  };
   // Düzenli sevkiyat: sırası gelmiş tüm seferleri aç. Sonucu DÜRÜST bildir —
   // "0 sefer" de bilgidir (sıra henüz gelmemiş ya da önceki sefer hâlâ açık).
   const runRecurrings = async () => {
@@ -511,6 +559,160 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
             </div>
           );
         })()}
+
+        {/* ── SAHA: aday firma kaydı — "önce değer, sonra hesap" ── */}
+        {/* Ocakçıya "önce uygulamaya kaydol" demek saha turunu öldürüyor.
+            Burada firma HENÜZ ÜYE DEĞİLKEN girilir, vitrini sahipsiz yayınlanır
+            (iletişim saha hattı), değeri gördükten sonra davet linkiyle kendi
+            hesabını açar ve her şey ona geçer. Rıza olmadan yayın YOK — bu
+            kural panelde değil, veritabanı kısıtında (prospects_consent_chk). */}
+        {tab === "saha" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Saha hattı: vitrin ilanlarında görünen numara. Boşsa vitrin
+                ilanında aranacak numara HİÇ görünmez — bu yüzden en üstte. */}
+            <div style={{ background: C.card, border: `2px solid ${sahaHatti ? C.ink : C.red}`, borderRadius: 6, padding: 14, boxShadow: "3px 3px 0 rgba(10,10,10,.12)" }}>
+              <label style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.sub, display: "block", marginBottom: 6 }}>SAHA HATTI (vitrin ilanlarında görünür)</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={hatDraft} onChange={(e) => setHatDraft(e.target.value)} placeholder="05XX XXX XX XX" inputMode="tel"
+                  style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "9px 11px", fontFamily: MONO, fontSize: 13, fontWeight: 700, color: C.ink, outline: "none" }} />
+                <button onClick={async () => { const r = await onSaveSahaHatti?.(hatDraft.trim()); toast?.(r?.ok === false ? (r.error || "Kaydedilemedi") : "Saha hattı kaydedildi", r?.ok === false ? "error" : "success"); }}
+                  style={{ flexShrink: 0, cursor: "pointer", padding: "9px 14px", borderRadius: 5, border: `2px solid ${C.ink}`, background: C.ink, color: C.yellow, fontFamily: MONO, fontSize: 11, fontWeight: 700 }}>KAYDET</button>
+              </div>
+              {!sahaHatti && (
+                <div style={{ fontFamily: MONO, fontSize: 10, color: C.red, marginTop: 6, lineHeight: 1.45 }}>
+                  Numara girilmeden vitrin ilanlarında iletişim görünmez — alıcı arayamaz.
+                </div>
+              )}
+            </div>
+
+            {/* Yeni aday */}
+            {!adayForm && (
+              <button onClick={() => setAdayForm({ id: null, ...BOS_ADAY })}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", padding: "12px 0", borderRadius: 6, border: `2px solid ${C.ink}`, background: C.yellow, color: C.ink, fontFamily: HEAD, fontSize: 13, fontWeight: 900, textTransform: "uppercase", boxShadow: "3px 3px 0 rgba(10,10,10,.15)" }}>
+                <PlusCircle size={16} strokeWidth={2.4} /> Aday firma ekle
+              </button>
+            )}
+
+            {/* Aday formu */}
+            {adayForm && (() => {
+              const alan = (k, lbl, ph, opts = {}) => (
+                <div>
+                  <label style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.sub, display: "block", marginBottom: 5 }}>{lbl}</label>
+                  {opts.area
+                    ? <textarea value={adayForm[k] || ""} onChange={(e) => setAdayForm((f) => ({ ...f, [k]: e.target.value }))} placeholder={ph}
+                        style={{ width: "100%", boxSizing: "border-box", minHeight: 58, resize: "vertical", background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "9px 11px", fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.ink, outline: "none" }} />
+                    : <input value={adayForm[k] || ""} onChange={(e) => setAdayForm((f) => ({ ...f, [k]: e.target.value }))} placeholder={ph} inputMode={opts.tel ? "tel" : undefined}
+                        style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "9px 11px", fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.ink, outline: "none" }} />}
+                </div>
+              );
+              return (
+                <div style={{ background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 14, boxShadow: "3px 3px 0 rgba(10,10,10,.12)", display: "flex", flexDirection: "column", gap: 11 }}>
+                  <div style={{ fontFamily: HEAD, fontSize: 14, fontWeight: 900, textTransform: "uppercase", color: C.ink }}>{adayForm.id ? "Aday firmayı düzenle" : "Yeni aday firma"}</div>
+                  {alan("name", "Firma adı *", "Aldur Madencilik")}
+                  <div>
+                    <label style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.sub, display: "block", marginBottom: 5 }}>ROL</label>
+                    <div style={{ display: "flex", gap: 7 }}>
+                      {PROSPECT_ROLES.map(([id, lbl]) => (
+                        <button key={id} onClick={() => setAdayForm((f) => ({ ...f, role: id }))}
+                          style={{ flex: 1, cursor: "pointer", padding: "9px 0", borderRadius: 5, border: `2px solid ${C.ink}`, background: adayForm.role === id ? C.ink : C.card, color: adayForm.role === id ? C.yellow : C.ink, fontFamily: MONO, fontSize: 10.5, fontWeight: 700 }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+                    {alan("il", "İl", "İzmir")}
+                    {alan("ilce", "İlçe", "Aliağa")}
+                  </div>
+                  {alan("phone", "Telefon (yayınlanmaz)", "05XX XXX XX XX", { tel: true })}
+                  {alan("tesisTuru", "Tesis türü", "Kırma ocağı (taş/mıcır)")}
+                  {alan("hakkinda", "Hakkında", "Kısa tanıtım — firma profilinde görünür.", { area: true })}
+                  {alan("note", "Saha notu (yalnız panel)", "Ziyaret notu, kiminle görüşüldü, ne konuşuldu.", { area: true })}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button disabled={adayBusy} onClick={kaydetAday}
+                      style={{ flex: 1, cursor: adayBusy ? "wait" : "pointer", padding: "11px 0", borderRadius: 5, border: `2px solid ${C.ink}`, background: C.green, color: "#fff", fontFamily: MONO, fontSize: 12, fontWeight: 700, opacity: adayBusy ? 0.6 : 1 }}>
+                      {adayBusy ? "KAYDEDİLİYOR…" : "KAYDET"}
+                    </button>
+                    <button onClick={() => setAdayForm(null)}
+                      style={{ flexShrink: 0, cursor: "pointer", padding: "11px 16px", borderRadius: 5, border: `2px solid ${C.ink}`, background: C.card, color: C.ink, fontFamily: MONO, fontSize: 12, fontWeight: 700 }}>VAZGEÇ</button>
+                  </div>
+                  <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+                    Aday daima TASLAK doğar. Firma “evet” demeden vitrin yayınlanamaz — sunucu reddeder.
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Aday listesi */}
+            {prospects.length === 0 ? (
+              <Empty icon={Target} text="Henüz aday firma yok. Saha turunda görüştüğün ocağı buradan ekle." />
+            ) : prospects.map((p) => {
+              const st = PROSPECT_STATUS[p.status] || PROSPECT_STATUS.taslak;
+              const vitrin = listings.filter((l) => String(l.prospectId) === String(p.id));
+              const sahiplenen = p.claimedBy ? users.find((u) => String(u.id) === String(p.claimedBy)) : null;
+              const rolLbl = PROSPECT_ROLES.find(([id]) => id === p.role)?.[1] || p.role || "—";
+              return (
+                <div key={p.id} style={{ background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 13px", boxShadow: "3px 3px 0 rgba(10,10,10,.12)", display: "flex", flexDirection: "column", gap: 9 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontFamily: HEAD, fontSize: 14, fontWeight: 900, textTransform: "uppercase", color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                      <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginTop: 2 }}>
+                        {[rolLbl, [p.il, p.ilce].filter(Boolean).join(" / "), `${vitrin.length} vitrin ilanı`].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <span style={{ flexShrink: 0, padding: "3px 8px", borderRadius: 4, border: `2px solid ${C.ink}`, background: st.bg, color: st.fg, fontFamily: MONO, fontSize: 9, fontWeight: 700, letterSpacing: "0.04em" }}>{st.label}</span>
+                  </div>
+
+                  {/* Rıza durumu — yayının ön koşulu */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, background: p.consentAt ? "#EAF6EE" : C.stone, border: `2px solid ${p.consentAt ? C.green : C.border}`, borderRadius: 5, padding: "7px 9px" }}>
+                    {p.consentAt ? <CheckCircle2 size={14} color={C.green} strokeWidth={2.4} /> : <AlertTriangle size={14} color={C.muted} strokeWidth={2.4} />}
+                    <span style={{ flex: 1, minWidth: 0, fontFamily: MONO, fontSize: 10, color: p.consentAt ? C.green : C.muted, lineHeight: 1.4 }}>
+                      {p.consentAt ? `Rıza alındı · ${fmt(p.consentAt)}${p.consentNote ? ` · ${p.consentNote}` : ""}` : "Rıza yok — vitrin yayınlanamaz"}
+                    </span>
+                    {!p.claimedBy && (
+                      <button onClick={() => rizaAl(p)}
+                        style={{ flexShrink: 0, cursor: "pointer", padding: "5px 9px", borderRadius: 4, border: `2px solid ${C.ink}`, background: p.consentAt ? C.card : C.yellow, color: C.ink, fontFamily: MONO, fontSize: 9.5, fontWeight: 700 }}>
+                        {p.consentAt ? "DÜZENLE" : "RIZA ALINDI"}
+                      </button>
+                    )}
+                  </div>
+
+                  {p.note && <div style={{ fontFamily: BODY, fontSize: 12, color: C.sub, lineHeight: 1.5 }}>{p.note}</div>}
+                  {sahiplenen && (
+                    <div style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>
+                      ↳ hesabını açtı: {sahiplenen.name} · {fmt(p.claimedAt)}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {p.phone && (
+                      <a href={`tel:${p.phone}`} style={{ display: "flex", alignItems: "center", gap: 5, textDecoration: "none", padding: "7px 10px", borderRadius: 4, border: `2px solid ${C.ink}`, background: C.green, color: "#fff", fontFamily: MONO, fontSize: 10.5, fontWeight: 700 }}>
+                        <Phone size={12} strokeWidth={2.6} /> ARA
+                      </a>
+                    )}
+                    {!p.claimedBy && (
+                      <button onClick={() => navigate(`/ilan-ver?aday=${p.id}`)}
+                        style={{ cursor: "pointer", padding: "7px 10px", borderRadius: 4, border: `2px solid ${C.ink}`, background: C.card, color: C.ink, fontFamily: MONO, fontSize: 10.5, fontWeight: 700 }}>+ VİTRİN İLANI</button>
+                    )}
+                    {!p.claimedBy && (
+                      <button onClick={() => yayinDegistir(p)} disabled={!p.consentAt && p.status !== "yayinda"}
+                        title={!p.consentAt && p.status !== "yayinda" ? "Önce rıza kaydı gerekir" : ""}
+                        style={{ cursor: (!p.consentAt && p.status !== "yayinda") ? "not-allowed" : "pointer", opacity: (!p.consentAt && p.status !== "yayinda") ? 0.4 : 1, padding: "7px 10px", borderRadius: 4, border: `2px solid ${C.ink}`, background: p.status === "yayinda" ? C.card : C.ink, color: p.status === "yayinda" ? C.ink : C.yellow, fontFamily: MONO, fontSize: 10.5, fontWeight: 700 }}>
+                        {p.status === "yayinda" ? "GERİ AL" : "YAYINLA"}
+                      </button>
+                    )}
+                    {!p.claimedBy && (
+                      <button onClick={() => davetPaylas(p)}
+                        style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", padding: "7px 10px", borderRadius: 4, border: `2px solid ${C.ink}`, background: C.card, color: C.ink, fontFamily: MONO, fontSize: 10.5, fontWeight: 700 }}>
+                        <Link2 size={12} strokeWidth={2.6} /> DAVET LİNKİ
+                      </button>
+                    )}
+                    <button onClick={() => setAdayForm({ id: p.id, name: p.name, role: p.role, phone: p.phone, email: p.email, il: p.il, ilce: p.ilce, tesisTuru: p.tesisTuru, hakkinda: p.hakkinda, malzemeler: p.malzemeler, note: p.note })}
+                      style={{ cursor: "pointer", padding: "7px 10px", borderRadius: 4, border: `2px solid ${C.ink}`, background: C.card, color: C.ink, fontFamily: MONO, fontSize: 10.5, fontWeight: 700 }}>DÜZENLE</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── EŞLEŞTİR: "bu işi şu 3 nakliyeciye söyle" ── */}
         {/* Saha turunun hızlandırıcısı: açık iş ilanına, o güzergâh/kategoride

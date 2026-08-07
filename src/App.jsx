@@ -14,6 +14,7 @@ import {
   loadProfileCache, saveProfileCache, clearProfileCache, loadKeepSession,
   loadSearchSignals, appendSearchSignal,
   loadPendingInvite, savePendingInvite, clearPendingInvite,
+  loadPendingProspect, savePendingProspect, clearPendingProspect,
 } from "./utils/storage";
 import { visibleReviewsFor } from "./utils/reviewGate";
 import { newId, nowIso } from "./utils/id";
@@ -27,7 +28,7 @@ import { splitAmount, earlyPayout } from "./utils/payments";
 import { PAYMENTS_ENABLED } from "./config/features";
 import { buildNotifications } from "./utils/notifications";
 import usePushNotifications from "./hooks/usePushNotifications";
-import { ToastProvider } from "./components/Toast";
+import { ToastProvider, useToast } from "./components/Toast";
 import { ErrorBoundary, NotFoundPage } from "./components/ErrorBoundary";
 import { SkeletonGrid } from "./components/Skeleton";
 import BootLoader from "./components/BootLoader";
@@ -123,6 +124,7 @@ function AppShell() {
 
   // ── VERI KATMANI: Supabase yapilandirilmissa async DB, yoksa localStorage ──
   const SB = isSupabaseConfigured;
+  const toast = useToast();   // saha aday kaydi sahiplenmesi gibi kabuk-duzeyi bildirimler
   const [sbHealth, setSbHealth] = useState(null); // { ok, code, message } — SB modunda tani
 
   // Ilanlar
@@ -159,6 +161,19 @@ function AppShell() {
     document.addEventListener("visibilitychange", cek);
     return () => document.removeEventListener("visibilitychange", cek);
   }, [SB]);
+  // SAHA HATTI: sahipsiz vitrin ilanlarında gösterilen YÜKLET numarası (firmanın
+  // kendi numarası DEĞİL — o hiç yayınlanmaz). Kayıtsız ziyaretçi de okur:
+  // app_config_read politikası 'saha_hatti' anahtarını herkese açar.
+  const [sahaHatti, setSahaHatti] = useState("");
+  useEffect(() => {
+    if (!SB) return;
+    api.fetchAppConfig("saha_hatti").then((v) => setSahaHatti(String(v?.phone || ""))).catch(() => {});
+  }, [SB]);
+  const saveSahaHatti = async (phone) => {
+    if (!SB) return { ok: false, error: "Sunucu bağlantısı yok." };
+    try { await api.saveAppConfig("saha_hatti", { phone: phone || "" }); setSahaHatti(phone || ""); return { ok: true }; }
+    catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Saha hattı kaydedilemedi.") }; }
+  };
   const [blocked, setBlocked] = useState(() => loadBlocked()); // { [blockerId]: [engellenenId] }
   const allListings = SB ? userListings : [...userListings, ...LISTINGS];
   const bannedIds = new Set(users.filter((u) => u.status === "banli").map((u) => String(u.id)));
@@ -168,22 +183,39 @@ function AppShell() {
   // asProfile: admin ÜYE ADINA ilan açarken hedef üyenin profili (saha onboarding —
   // ocak sahibi "sen gir benim yerime" diyor). Sahiplik hedef üyede kalır; ilan
   // onun "İlanlarım"ında görünür. Sunucu tarafı izni: listings_admin_insert.
-  const publishListing = async (listing, asProfile) => {
+  // asProspect: admin SAHA ADAY KAYDI adına VİTRİN ilanı açarken hedef aday firma
+  // (henüz üye değil — hesabı yok). İlan SAHİPSİZ doğar (owner_id null) + prospect_id
+  // ile adaya bağlanır: iletişim saha hattına düşer, kabul edilemez. Firma davet
+  // linkiyle hesabını açınca claim_prospect ilanı ona devreder.
+  const publishListing = async (listing, asProfile, asProspect) => {
     // Yaptirim: banli kullanici ilan veremez — sessiz basari yerine ACIK hata
     // (IlanVerPage catch'i setError ile gosterir; null donmek sahte "yayında" ekrani acardi).
     if (user?.status === "banli") throw new Error("Hesabın askıya alındı.");
-    const onBehalf = asProfile && isAdmin(user) ? asProfile : null;
-    const owner = onBehalf || profile || user;
+    const onProspect = asProspect && isAdmin(user) ? asProspect : null;
+    const onBehalf = !onProspect && asProfile && isAdmin(user) ? asProfile : null;
+    const owner = onBehalf || (onProspect ? null : (profile || user));
+    // Vitrin ilanı adayla aynı durumu izler: taslak adayın ilanı 'kapali' açılır,
+    // panoya ancak firma "evet" deyince (publish_prospect) çıkar.
+    const rec0 = onProspect
+      ? { ...listing, prospectId: onProspect.id, ownerNameOverride: onProspect.name || listing.ownerNameOverride,
+          statusOverride: onProspect.status === "yayinda" ? "aktif" : "kapali" }
+      : listing;
     if (SB) {
       // DB kaydı başarısızsa hata yukarı fırlatılır; UI sahte "yayında" göstermez.
-      const saved = await api.createListing(listing, owner);
+      const saved = await api.createListing(rec0, owner);
       await reloadListings();
       return saved; // gerçek DB id'li ilan
     }
-    // Yerel modda sahip alanlarını da hedef üyeye çevir (SB'de createListing yapıyor).
-    const rec = onBehalf
-      ? { ...listing, owner: listing.ownerNameOverride || onBehalf.name || "", ownerId: onBehalf.id, ownerVerified: Boolean(onBehalf.verified), ownerRating: onBehalf.rating || 5.0, ownerLogo: onBehalf.logo || "" }
-      : listing;
+    // Yerel modda sahip alanlarını da hedefe çevir (SB'de createListing yapıyor).
+    // statusOverride yalnız DB katmanının anladığı bir taşıyıcı — yerel kayda
+    // sızmasın (localStorage'da kalıcı olur ve hiçbir şey okumaz).
+    const { statusOverride, ...rec0Temiz } = rec0;
+    const rec = onProspect
+      ? { ...rec0Temiz, owner: onProspect.name || "", ownerId: null, ownerVerified: false, ownerRating: 5.0, ownerLogo: "",
+          status: statusOverride || "aktif" }
+      : onBehalf
+        ? { ...rec0Temiz, owner: listing.ownerNameOverride || onBehalf.name || "", ownerId: onBehalf.id, ownerVerified: Boolean(onBehalf.verified), ownerRating: onBehalf.rating || 5.0, ownerLogo: onBehalf.logo || "" }
+        : rec0Temiz;
     setUserListings(prev => [rec, ...prev]);
     return rec;
   };
@@ -483,6 +515,13 @@ function AppShell() {
   // yerel modda sayaç haritasından tarihsiz satırlara açılır (Pano top-5 çalışır).
   const [tapStats, setTapStats] = useState([]);
   const [deletedAccounts, setDeletedAccounts] = useState([]); // SB-only; yerel modda silme kaydı yok
+  // ── SAHA ADAY KAYDI ────────────────────────────────────────────────
+  // Ziyaret edilen ama HENÜZ ÜYE OLMAYAN firmalar. profiles.id → auth.users FK
+  // olduğu için bunlara profil açılamaz; ayrı bir tabloda dururlar, vitrin
+  // ilanları owner_id null + prospect_id ile yayınlanır ve firma davet linkiyle
+  // hesabını açınca (claim_prospect) her şey ona devredilir. SB-only: yerel
+  // önizlemede saha turu diye bir şey yok, panel sekmesi boş görünür.
+  const [prospects, setProspects] = useState([]);
   // ── TALEP SİNYALİ: "aradı ama bulamadı" kaydı ──────────────────────
   // Sonuçsuz arama, geriye dönük ASLA toplanamayan veri: kullanıcı arar,
   // ekran boş gelir, bilgi buhar olur. Panelde "Bergama · mıcır · 14 arama
@@ -718,6 +757,36 @@ function AppShell() {
       return { ok: true, count: n };
     } catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Düzenli seferler işletilemedi.") }; }
   };
+  // ── Admin: SAHA ADAY KAYDI ─────────────────────────────────────────
+  // Hepsi SB-only: aday kaydı sunucudaki prospects tablosunda yaşar (RLS admin).
+  // Yerel önizlemede saha turu yok; net hata dön, sahte başarı gösterme.
+  const saveProspect = async (id, patch) => {
+    if (!SB) return { ok: false, error: "Saha aday kaydı yalnız sunucu modunda çalışır." };
+    try {
+      const rec = id
+        ? await api.updateProspect(id, patch)
+        : await api.createProspect(patch, user?.id);
+      setProspects((prev) => (id ? prev.map((p) => (p.id === id ? rec : p)) : [rec, ...prev]));
+      logAdmin("aday", `${rec.name}: ${id ? "güncellendi" : "aday kayıt açıldı"}`);
+      return { ok: true, prospect: rec };
+    } catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Aday kayıt kaydedilemedi.") }; }
+  };
+  // Rıza damgası: firma "evet" dedi. Yayın kapısı SUNUCUDA (prospects_consent_chk +
+  // publish_prospect); buradaki damga o kapının anahtarı, süsü değil.
+  const setProspectConsent = async (id, consentNote) => {
+    if (!SB) return { ok: false, error: "Saha aday kaydı yalnız sunucu modunda çalışır." };
+    return saveProspect(id, { consentAt: new Date().toISOString(), consentNote: consentNote || "" });
+  };
+  const publishProspect = async (id, yayinla) => {
+    if (!SB) return { ok: false, error: "Saha aday kaydı yalnız sunucu modunda çalışır." };
+    try {
+      const rec = yayinla ? await api.publishProspect(id) : await api.unpublishProspect(id);
+      setProspects((prev) => prev.map((p) => (p.id === id ? (rec || p) : p)));
+      await reloadListings();   // vitrin ilanları aktif/kapali oldu
+      logAdmin("aday", `${rec?.name || id}: vitrin ${yayinla ? "yayınlandı" : "geri alındı"}`);
+      return { ok: true };
+    } catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Vitrin durumu değiştirilemedi.") }; }
+  };
   // Admin: herhangi bir kullaniciyi guncelle (ban/askiya al/rol/manuel onay).
   const updateUserAdmin = async (userId, patch) => {
     // SB modunda önce DB'ye yaz; başarısızsa yerel state'i HİÇ değiştirme
@@ -916,6 +985,39 @@ function AppShell() {
         ]);
         setInvite({ code, count });
       })();
+      // 1b) SAHA ADAY KAYDI: /?firma=TOKEN ile gelen firma hesabını açtı →
+      // aday kaydı + vitrin ilanları bu hesaba geçer. Jeton tek kullanımlık:
+      // sonuç ne olursa olsun temizlenir (sunucu zaten idempotent).
+      const adayJeton = loadPendingProspect();
+      if (adayJeton) {
+        (async () => {
+          const res = await api.claimProspect(adayJeton);
+          clearPendingProspect();
+          setProspectWelcome(null);
+          if (res?.ok) {
+            // Profil + ilanlar sunucuda değişti; ikisini de tazele yoksa üye
+            // kendi firmasını ve devredilen ilanlarını göremez. Rol de burada
+            // dolduğu için lastGoodProfileRef güncellenir — aksi halde bir
+            // sonraki hydrate eski (rolsüz) profili "iyi" sanıp geri yazardı.
+            const [fresh] = await Promise.all([
+              api.getProfile(user.id).catch(() => null),
+              reloadListings(),
+            ]);
+            if (fresh) {
+              setProfile(fresh); setUser(fresh);
+              if (fresh.role) { lastGoodProfileRef.current = fresh; roleChosenRef.current = true; }
+            }
+            const n = Number(res.listings) || 0;
+            toast(n > 0
+              ? `${res.name} profili hesabına aktarıldı — ${n} ilan artık senin.`
+              : `${res.name} profili hesabına aktarıldı.`, "success", 5000);
+          } else if (res?.reason === "zaten_sahiplenildi") {
+            toast("Bu davet linki daha önce başka bir hesapta kullanılmış.", "error", 5000);
+          } else if (res?.reason === "kurulu_hesap") {
+            toast(`${res.name || "Bu firma"} kaydı yalnız yeni açılan bir hesaba aktarılabilir. Kendi ilanların olan hesapla devralınamaz.`, "error", 6000);
+          }
+        })();
+      }
       // 2) Düzenli sevkiyat: sırası gelen sefer varsa aç, listeyi tazele.
       api.runMyRecurrences().then((n) => { if (n > 0) reloadListings(); }).catch(() => {});
       return;
@@ -962,6 +1064,8 @@ function AppShell() {
     api.fetchDeletedAccounts().then(setDeletedAccounts).catch(() => {});
     // Talep sinyali: sonuçsuz aramalar (tablo yoksa sessizce boş → sekme "kayıt yok" der).
     api.fetchSearchSignals().then(setSearchSignals).catch(() => {});
+    // Saha aday kayıtları (tablo yoksa sessizce boş → sekme "aday yok" der).
+    api.fetchProspects().then(setProspects).catch(() => {});
     // user yerine id+email yeterli (isAdmin yalnizca bunlara bakar).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [SB, user?.id, user?.email]);
@@ -1044,15 +1148,43 @@ function AppShell() {
     } catch { /* noop */ }
   }, [location.search]);
 
+  // ── SAHA ADAY KAYDI: /?firma=TOKEN ────────────────────────────────
+  // Saha turunda girilen firma, davet linkiyle kendi hesabını açar. Jeton
+  // davet kodunun birebir ikizi gibi yerelde bekler (link → kayıt → giriş
+  // yolculuğunda kaybolmasın), oturum açılınca claim_prospect devreder.
+  // prospectWelcome yalnız GİRİŞ EKRANINDA "Akdağ Madencilik adına hesap
+  // açıyorsunuz" satırını basmak için; sunucu bu RPC'de telefon/e-posta dönmez.
+  const [prospectWelcome, setProspectWelcome] = useState(null);
+  useEffect(() => {
+    const token = new URLSearchParams(location.search).get("firma");
+    if (!token) return;
+    const t = token.trim().slice(0, 24);
+    savePendingProspect(t);
+    if (SB) api.prospectByToken(t).then((p) => { if (p?.name) setProspectWelcome(p); }).catch(() => {});
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("firma");
+      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    } catch { /* noop */ }
+    // Kayıtsız ziyaretçiye giriş ekranını doğrudan aç: link zaten "hesabını aç"
+    // çağrısı, ayrıca bir düğme aratmanın anlamı yok.
+    if (!user?.id) setShowAuth(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, SB]);
+
   // ── Giris: E-POSTA / SIFRE (kayit + giris) ───────────────────
   // SB modu: signUp/signIn Supabase'e yazar; onAuthChange oturumu kurar. Onay
   // e-postasi aciksa needsConfirm doner (modal mesaj gosterir, kapanmaz). Rol
   // e-postadan da gelmez -> needsRole akisi RoleSelectModal'i acar.
   // localStorage modu: sahte hesap acar (gelistirme/onizleme).
-  const emailAuth = async ({ mode, name, email, password, role }) => {
+  const emailAuth = async ({ mode, name, email, password, role, phone }) => {
     if (SB) {
       const res = mode === "register"
-        ? await api.signUp({ name, email, password, role })   // rol kayıt formundan gelir
+        // Telefon kayıt formundan gelir. Daha önce signUp'a HİÇ geçilmiyordu
+        // (handle_new_user'ın phone dalı ölüydü) — üye ilk işini yapmaya
+        // kalkınca PhoneGateModal araya giriyordu. Saha davetinde bu fazladan
+        // adım kaydı öldürür; numarayı en başta iste, bir daha sorma.
+        ? await api.signUp({ name, email, password, role, phone })   // rol + telefon kayıt formundan gelir
         : await api.signIn({ email, password });
       // Ham Supabase hatasi ("Invalid login credentials" vb.) kullanici diline cevrilir.
       if (!res.ok) return { ...res, error: api.trMsg(res.error, mode === "register" ? "Kayıt olunamadı. Tekrar dene." : "Giriş yapılamadı. Tekrar dene.") };
@@ -1303,20 +1435,20 @@ function AppShell() {
                 <Route path="/sefer-gecmisi" element={<PageTransition><TripHistoryPage user={user} listings={listings} offers={offers} onRequireAuth={requireAuth} /></PageTransition>} />
                 <Route path="/filo" element={<PageTransition><FleetPage user={user} fleet={myFleet} onAddVehicle={addVehicle} onUpdateVehicle={updateVehicle} onRemoveVehicle={removeVehicle} onRequireAuth={requireAuth} /></PageTransition>} />
                 <Route path="/ilanlar" element={<PageTransition><ListingsPage listings={listings} user={user} fleet={myFleet} blockedIds={myBlocked} offers={offers} reviews={reviews} onSearchSignal={logSearchSignal} onRefresh={SB ? () => Promise.all([reloadListings(), reloadOffers()]) : undefined} /></PageTransition>} />
-                <Route path="/ilan/:id" element={<PageTransition><IlanDetayPage listings={listings} user={user} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} offers={offers} reviews={reviews} onAddOffer={addOffer} onAcceptJob={acceptJob} onReport={addReport} isBlocked={isBlocked} onToggleBlock={toggleBlock} getContact={getContact} onPhoneTap={logPhoneTap} /></PageTransition>} />
+                <Route path="/ilan/:id" element={<PageTransition><IlanDetayPage listings={listings} user={user} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} offers={offers} reviews={reviews} onAddOffer={addOffer} onAcceptJob={acceptJob} onReport={addReport} isBlocked={isBlocked} onToggleBlock={toggleBlock} getContact={getContact} onPhoneTap={logPhoneTap} sahaHatti={sahaHatti} /></PageTransition>} />
                 <Route path="/takip/:id" element={<PageTransition><TakipPage listings={listings} user={user} offers={offers} getContact={getContact} reviews={reviews} onAddReview={addReview} getUserRating={getUserRating} onUpdateListing={updateListing} onReport={addReport} onCancelJob={cancelJob} onPayToEscrow={payToEscrow} onReleasePayment={releasePayment} onRefundPayment={refundPayment} onEarlyPayout={earlyPayoutNakliyeci} /></PageTransition>} />
                 <Route path="/sozlesme/:offerId" element={<PageTransition><SozlesmePage listings={listings} offers={offers} getContact={getContact} /></PageTransition>} />
                 {PAYMENTS_ENABLED && (
                 <Route path="/cuzdan" element={<PageTransition><CuzdanPage user={user} listings={listings} offers={offers} onRequireAuth={requireAuth} /></PageTransition>} />
                 )}
-                <Route path="/ilan-ver" element={<PageTransition><IlanVerPage onPublish={publishListing} onUpdate={updateListing} listings={listings} offers={offers} reviews={reviews} user={user} users={users} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} /></PageTransition>} />
+                <Route path="/ilan-ver" element={<PageTransition><IlanVerPage onPublish={publishListing} onUpdate={updateListing} listings={listings} offers={offers} reviews={reviews} user={user} users={users} prospects={prospects} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} /></PageTransition>} />
                 <Route path="/ilan-duzenle/:id" element={<PageTransition><IlanVerPage onPublish={publishListing} onUpdate={updateListing} listings={listings} offers={offers} reviews={reviews} user={user} fleet={myFleet} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} /></PageTransition>} />
                 <Route path="/ilanlarim" element={<PageTransition><IlanlarimPage listings={listings} user={user} offers={offers} reviews={reviews} onUpdateOffer={updateOffer} onAcceptOffer={acceptOffer} onUpdateListing={updateListing} onDeleteListing={removeListing} onRequireAuth={requireAuth} onUpdateProfile={updateProfile} getContact={getContact} onReport={addReport} phoneTaps={phoneTaps} /></PageTransition>} />
                 <Route path="/tekliflerim" element={<PageTransition><TekliflerimPage listings={listings} user={user} offers={offers} onRequireAuth={requireAuth} onSeen={markOffersSeen} /></PageTransition>} />
                 <Route path="/mesajlar" element={<PageTransition><MesajlarPage user={user} listings={listings} offers={offers} messages={messages} onSendMessage={addMessage} onRequireAuth={requireAuth} onSeen={markMessagesSeen} onMarkThreadRead={markThreadRead} getContact={getContact} msgSeen={msgSeen} blockedIds={myBlocked} onReport={addReport} onToggleBlock={toggleBlock} /></PageTransition>} />
                 <Route path="/profil" element={<PageTransition><ProfilPage user={user} onUpdateProfile={updateProfile} onRequireAuth={requireAuth} onLogout={logout} onDeleteAccount={deleteAccount} reviews={reviews} getUserRating={getUserRating} listings={listings} offers={offers} docs={docs.filter(d => user && String(d.ownerId) === String(user.id))} onAddDoc={addDoc} onRemoveDoc={removeDoc} notifPrefs={notifPrefs} onUpdateNotifPrefs={updateNotifPrefs} onReport={addReport} blockedIds={myBlocked} onToggleBlock={toggleBlock} getContact={getContact} invite={invite} /></PageTransition>} />
                 <Route path="/panel" element={<PageTransition><DashboardPage user={user} listings={listings} offers={offers} messages={messages} onRequireAuth={requireAuth} /></PageTransition>} />
-                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} adminNotes={adminNotes} onSaveAdminNote={saveAdminNote} tapStats={adminTapStats} deletedAccounts={deletedAccounts} searchSignals={searchSignals} onRunRecurrences={runAllRecurrences} /></PageTransition>} />
+                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} adminNotes={adminNotes} onSaveAdminNote={saveAdminNote} tapStats={adminTapStats} deletedAccounts={deletedAccounts} searchSignals={searchSignals} onRunRecurrences={runAllRecurrences} prospects={prospects} onSaveProspect={saveProspect} onProspectConsent={setProspectConsent} onPublishProspect={publishProspect} sahaHatti={sahaHatti} onSaveSahaHatti={saveSahaHatti} /></PageTransition>} />
                 <Route path="/muteahhit" element={<PageTransition><MuteahhitPage /></PageTransition>} />
                 <Route path="/tedarikci" element={<PageTransition><TedarikciPage /></PageTransition>} />
                 <Route path="/satici/:id" element={<PageTransition><SaticiProfilPage user={user} users={users} listings={listings} offers={offers} reviews={reviews} getUserRating={getUserRating} onReport={addReport} /></PageTransition>} />
@@ -1368,7 +1500,7 @@ function AppShell() {
       <MobileTabBar unreadCount={unreadCount} pendingOffersCount={pendingOffersCount} orderUpdatesCount={orderUpdatesCount} role={(profile || user)?.role} />
 
       {showNewPassword && <NewPasswordModal onSubmit={updatePassword} onDone={() => setShowNewPassword(false)} />}
-      {showAuth && !showRole && !showNewPassword && <AuthModal onClose={() => setShowAuth(false)} onProvider={startOAuth} onEmailAuth={emailAuth} onReset={resetPassword} />}
+      {showAuth && !showRole && !showNewPassword && <AuthModal onClose={() => setShowAuth(false)} onProvider={startOAuth} onEmailAuth={emailAuth} onReset={resetPassword} prospect={prospectWelcome} />}
       {showRole && <RoleSelectModal onSelect={chooseRole} />}
       {showOnboard && !showAuth && !showRole && <OnboardingModal onClose={finishOnboard} />}
     </div>

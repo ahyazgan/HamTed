@@ -156,7 +156,7 @@ function oncelikDurumu(l, user, isOwner) {
   };
 }
 
-export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], onRequireAuth, onUpdateProfile, offers = [], reviews = [], onAddOffer, onAcceptJob, onReport, isBlocked, onToggleBlock, getContact, onPhoneTap }) {
+export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], onRequireAuth, onUpdateProfile, offers = [], reviews = [], onAddOffer, onAcceptJob, onReport, isBlocked, onToggleBlock, getContact, onPhoneTap, sahaHatti = "" }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -211,6 +211,10 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
   // Sahipsiz (owner_id NULL) demo kayıt = tanıtım ilanı: sunucu etkileşimi
   // engelliyor, istemci de aksiyonları hiç göstermesin.
   const isShowcase = l.ownerId == null;
+  // SAHA KAYDI: sahipsiz AMA bir aday firmaya bağlı (prospectId). Demo tanıtım
+  // ilanından farkı, arkasında GERÇEK bir firma olması — iletişim saha hattına
+  // düşer, firma hesabını açınca ilan ona geçer. Kabul yine edilemez.
+  const isSaha = isShowcase && l.prospectId != null;
   // Rol-aksiyon eşleşmesi: iş ilanına yalnız nakliyeci teklif/kabul eder;
   // ürün ve araç ilanına yalnız alıcı (isveren) sipariş/kiralama yapar.
   // Giriş yapmamışsa izin ver (auth modalı açılır, rol girişte belirlenir).
@@ -632,9 +636,46 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
               <Phone size={14} strokeWidth={2.4} /> Numarayı görmek için giriş yap
             </button>
           )}
-          {/* Tanıtım ilanı: gerçek sahip/numara yok — butonlar maskeli görünür,
-              dokununca bilgi verilir (ekran görüntüsü + uygulama hissi tam olsun). */}
-          {isShowcase && (
+          {/* ── SAHA KAYDI: firma sahada eklendi, henüz üye değil ──
+              Firmanın KENDİ numarası hiçbir koşulda yayınlanmaz (rızası
+              vitrinini yayınlamak için, numarasını dağıtmak için değil).
+              İletişim YÜKLET saha hattına düşer; aracılığı biz yaparız.
+              Bu ilan kabul edilemez — accept_job sunucuda zaten reddediyor. */}
+          {isSaha && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: C.stone, border: `2px solid ${C.border}`, borderRadius: 6, padding: "9px 11px", marginBottom: 8 }}>
+                <ShieldCheck size={14} color={C.sub} strokeWidth={2.4} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontFamily: MONO, fontSize: 10.5, color: C.sub, lineHeight: 1.5 }}>
+                  Bu firma YÜKLET saha ekibi tarafından eklendi. İletişim saha hattı üzerinden kurulur.
+                </span>
+              </div>
+              {sahaHatti ? (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <a href={`tel:${sahaHatti}`} onClick={() => onPhoneTap?.(l)} aria-label={`YÜKLET saha hattı: ${sahaHatti}`}
+                    style={{ flex: 1.4, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `2px solid ${C.ink}`, borderRadius: 6, background: C.green, color: "#fff", padding: "11px 8px", fontFamily: MONO, fontSize: 13.5, fontWeight: 700, letterSpacing: "0.02em", textDecoration: "none", whiteSpace: "nowrap" }}>
+                    <Phone size={15} strokeWidth={2.4} /> {sahaHatti}
+                  </a>
+                  {waPhone(sahaHatti) && (
+                    <a href={`https://wa.me/${waPhone(sahaHatti)}?text=${encodeURIComponent(`Merhaba, YÜKLET'teki "${l.title}" ilanı (${l.owner || "firma"}) hakkında yazıyorum.`)}`}
+                      target="_blank" rel="noopener noreferrer" onClick={() => onPhoneTap?.(l)}
+                      aria-label="YÜKLET saha hattına WhatsApp'tan yaz"
+                      style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: `2px solid ${C.ink}`, borderRadius: 6, background: "#25D366", color: "#fff", padding: "11px 8px", fontFamily: HEAD, fontSize: 13, fontWeight: 800, textTransform: "uppercase", textDecoration: "none", whiteSpace: "nowrap" }}>
+                      <MessageCircle size={15} strokeWidth={2.6} /> WhatsApp
+                    </a>
+                  )}
+                </div>
+              ) : (
+                // Saha hattı panelde girilmemiş: sahte numara göstermektense
+                // dürüst ol — aksi halde alıcı boşluğa dokunur.
+                <div style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textAlign: "center", padding: "10px 8px", border: `2px dashed ${C.border}`, borderRadius: 6 }}>
+                  İletişim bilgisi yakında eklenecek.
+                </div>
+              )}
+            </div>
+          )}
+          {/* Tanıtım ilanı (demo seed): gerçek sahip/numara yok — butonlar maskeli
+              görünür, dokununca bilgi verilir (uygulama hissi tam olsun). */}
+          {isShowcase && !isSaha && (
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button onClick={() => toast("Bu bir tanıtım ilanıdır — gerçek ilanlarda numara görünür.", "info")}
                 style={{ flex: 1.4, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `2px solid ${C.ink}`, borderRadius: 6, background: C.green, color: "#fff", padding: "11px 8px", fontFamily: MONO, fontSize: 13.5, fontWeight: 700, letterSpacing: "0.02em", whiteSpace: "nowrap", cursor: "pointer" }}>

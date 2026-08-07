@@ -26,6 +26,23 @@ export function listingShareUrl(id) {
 export function inviteShareUrl(code) {
   return `${publicBase()}/?davet=${encodeURIComponent(code)}`;
 }
+// Saha aday kaydı linki: /?firma=TOKEN ile açılır. Firma kendi hesabını açınca
+// claim_prospect aday kaydı + vitrin ilanlarını o hesaba devreder.
+export function prospectShareUrl(token) {
+  return `${publicBase()}/?firma=${encodeURIComponent(token)}`;
+}
+// Saha turunda WhatsApp'a yapıştırılacak metin. Kısa: ocakçı telefonda 4 satır okur.
+export function prospectShareText(p) {
+  if (!p) return "";
+  return [
+    `${p.name} — YÜKLET'te profiliniz hazır.`,
+    "",
+    "Bu bağlantıdan hesabınızı açtığınızda profil ve ilanlarınız size geçer.",
+    "Ücretsiz, komisyon yok.",
+    "",
+    prospectShareUrl(p.token),
+  ].join("\n");
+}
 
 // ── WhatsApp'a hazır ilan metni ─────────────────────────────────────
 // Sahanın tamamı WhatsApp gruplarında dönüyor; oraya yapıştırılan şey

@@ -85,12 +85,39 @@ Bu fazın işini hızlandırmak için panele eklenenler. Hepsi `/admin` altında
 | **Üye › Segment + arama** | "7g girmedi / İlan açmadı / Eşleşmedi / Telefonsuz / Banlı" süzgeçleri + rol filtresi + ad/e-posta/telefon/il araması. Üye kartında **son giriş** görünür. |
 | **Üye › Adına ilan ver** | Sahada "sen gir benim yerime" anı: `/ilan-ver?adina=<üyeId>` admin modu. Form hedef üyenin **rolüne** göre açılır, ilan **üyenin** olur (sahiplik, İlanlarım, düzenleme hep onda). Telefon/değerlendirme kapıları bu modda atlanır. |
 
+---
+
+## 9. Saha aday kaydı — "önce değer, sonra hesap" (2026-08-08)
+
+§8'deki **Adına ilan ver** hedef üyenin **önceden kaydolmuş olmasını** şart koşuyordu
+(`profiles.id → auth.users` FK). Oysa bu planın kendi kuralı bunun tersi: *"vitrin
+taslağı ziyaretten ÖNCE hazırlanır"*. Aradaki boşluğu **Saha** sekmesi kapatır.
+
+| Adım | Ne olur |
+|---|---|
+| **1. Aday firma ekle** | Panel › **Saha**. Firma adı, rol, il/ilçe, telefon (yayınlanmaz), tesis türü, saha notu. Hesap **açılmaz** — ayrı `prospects` tablosu. Aday daima TASLAK doğar. |
+| **2. Vitrin ilanı** | `+ Vitrin ilanı` → `/ilan-ver?aday=<adayId>`. İlan **sahipsiz** doğar (`owner_id` null + `prospect_id`), taslak adayınki `kapali` durur. |
+| **3. Rıza** | Ziyarette firma "evet" der → **Rıza alındı** (tarih + nasıl belgelendiği). Rıza olmadan **Yayınla** çalışmaz — kapı panelde değil, **veritabanı kısıtında** (`prospects_consent_chk`). |
+| **4. Yayınla** | Vitrin panoya çıkar. İlanda firmanın numarası **değil**, `Saha hattı` görünür; kartta `SAHA KAYDI` rozeti; ilan **kabul edilemez** (`accept_job` sahipsiz ilanı reddediyor). Aracılığı sen yaparsın. |
+| **5. Davet linki** | Değer görüldükten sonra `Davet linki` → WhatsApp. `/?firma=TOKEN` ile açılır; firma kendi hesabını açar (ad/rol ön-dolu, rol sorulmaz) ve `claim_prospect` **profili + tüm vitrin ilanlarını** o hesaba devreder. |
+
+**Saha hattı numarası** Saha sekmesinin en üstünde girilir (`app_config.saha_hatti`).
+Girilmezse vitrin ilanında iletişim **hiç görünmez** — sekme bunu kırmızı uyarır.
+
+**Devir kapısı:** davet linki WhatsApp'ta dolaşabilir. Kendi ilanı olan ya da başka
+bir firmayı zaten sahiplenmiş hesap devir **alamaz** — yalnız taze hesap sahiplenir.
+
 ### Çalıştırılacak SQL (canlı proje)
 
 1. `supabase/migration-2026-07-saha-crm2.sql` — **ŞART.** `profiles.last_seen`
    + `touch_last_seen()`, `app_config` tablosu (duyuru), `listings_admin_insert`
    politikası (adına ilan). Bu koşmadan: son giriş boş görünür, duyuru yine
    yalnız kendi cihazında kalır, adına ilan RLS'e takılır.
-2. `supabase/migration-2026-07-haftalik-ozet.sql` — **opsiyonel.** Pazartesi
+2. `supabase/migration-2026-08-saha-aday.sql` — **ŞART (§9 için).** `prospects`
+   tablosu + rıza kapısı, `listings.prospect_id`, `publish/unpublish_prospect`,
+   `prospect_by_token`, `claim_prospect` ve `guard_driver_listing_update`'in
+   **sahiplenme istisnası**. Bu koşmadan Saha sekmesi boş görünür ve davet linki
+   çalışmaz. Dosyanın sonundaki kontrol sorgularını çalıştırıp doğrula.
+3. `supabase/migration-2026-07-haftalik-ozet.sql` — **opsiyonel.** Pazartesi
    sabahı pano metriklerini mailine yollar (pg_cron + pg_net + Resend). Dosyanın
    sonundaki bloktan Resend anahtarını yazmadan mail gitmez.

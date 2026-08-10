@@ -49,6 +49,9 @@ NEDEN YÜKLET?
 • Silobas / dökme: çimento, uçucu kül, kireç, alçı, tahıl, yem, toz/granül kimyasal — pnömatik silobas.
 • Ocak ürünleri (kum, mıcır, agrega) hafriyat kategorisinde damperli araçla taşınır.
 
+SAHA KAYDI
+Bazı ocak ve tesis vitrinleri, firmanın açık rızası alınarak YÜKLET saha ekibi tarafından eklenir ve ilan kartında "SAHA KAYDI" rozetiyle işaretlenir. Bu kayıtlarda firmanın kendi numarası yayınlanmaz; iletişim YÜKLET saha hattı üzerinden kurulur. Firma dilediğinde kaydı devralabilir ya da kaldırtabilir.
+
 GİZLİLİK
 Uygulamada reklam ve üçüncü taraf analitik yoktur. Konum yalnızca canlı sefer takibini kendiniz başlattığınızda alınır; izin vermezseniz diğer tüm özellikler çalışır. Verileriniz reklam için satılmaz. Hesabınızı ve tüm verilerinizi uygulama içinden anında silebilirsiniz.
 
@@ -110,6 +113,9 @@ YÜKLET, hafriyat ve silobas/dökme yük taşımacılığında iş sahibini, nak
 KATEGORİLER
 • Hafriyat: toprak, moloz, kaya, asfalt kırığı, metal hurda
 • Silobas/dökme: çimento, uçucu kül, kireç, alçı, tahıl, yem, toz/granül kimyasal (kum-mıcır-agrega hafriyat kategorisindedir)
+
+SAHA KAYDI
+Bazı ocak ve tesis vitrinleri, firmanın açık rızası alınarak YÜKLET saha ekibi tarafından eklenir ve "SAHA KAYDI" rozetiyle işaretlenir. Bu kayıtlarda firmanın kendi numarası yayınlanmaz; iletişim YÜKLET saha hattı üzerinden kurulur. Firma dilediğinde kaydı devralabilir ya da kaldırtabilir.
 
 GİZLİLİK
 Reklam ve üçüncü taraf analitik yok. Konum yalnızca canlı sefer takibini kendiniz açtığınızda alınır. Veriler reklam için satılmaz. Hesap ve tüm veriler uygulama içinden anında silinebilir.

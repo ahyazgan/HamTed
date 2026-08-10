@@ -61,19 +61,15 @@ Kisisel verileriniz, asagidaki durumlar disinda ucuncu taraflarla paylasilmaz:
 
 ## 4. Uye Olmayan Firmalarin Vitrin Kayitlari
 
-YÜKLET saha ekibi, sahada yuz yuze gorustugu ve **acik rizasini aldigi** firmalarin
+YÜKLET saha ekibi, sahada yuz yuze gorustugu ve acik rizasini aldigi firmalarin
 ticari bilgilerini (firma adi, il/ilce, sattigi malzeme ve fiyati) firma henuz uye
-olmadan yayinlayabilir. Bu kayitlar ilan kartinda **"SAHA KAYDI"** rozetiyle
-isaretlenir.
+olmadan yayinlayabilir. Bu kayitlar ilan kartinda "SAHA KAYDI" rozetiyle isaretlenir.
 
-- Bu kayitlarda firmanin **kendi telefon numarasi yayinlanmaz**; iletisim YÜKLET
-  saha hatti uzerinden kurulur.
-- Firma dilediginde kendi hesabini acarak kaydin sahipligini devralabilir.
-- **Kaydin kaldirilmasi:** info@yuklet.co adresine firma adiyla yazmaniz yeterlidir;
-  talep en gec **7 gun** icinde islenir ve kayit yayindan kaldirilir. KVKK
-  kapsamindaki diger talepleriniz icin kvkk@yuklet.co.
-- Bu kayitlar ticari faaliyet bilgisidir; kisisel veri iceren alanlar (yetkili
-  telefonu, e-postasi) yalnizca saha ekibince gorulur, uygulamada yayinlanmaz.
+- **Iletisim:** Bu kayitlarda firmanin kendi telefon numarasi YAYINLANMAZ; iletisim YÜKLET saha hatti uzerinden kurulur.
+- **Riza:** Firmanin onayi alinmadan hicbir kayit yayina alinamaz; onay tarihi ve nasil alindigi kayit altindadir.
+- **Sahiplik:** Firma diledigi zaman kendi hesabini acarak kaydin sahipligini devralabilir.
+- **Kaldirma:** info@yuklet.co adresine firma adiyla yazmaniz yeterlidir; talep en gec 7 gun icinde islenir ve kayit yayindan kaldirilir.
+- **Kapsam:** Bu kayitlar ticari faaliyet bilgisidir; kisisel veri iceren alanlar (yetkili telefonu, e-postasi) yalnizca saha ekibince gorulur, uygulamada yayinlanmaz.
 
 ## 5. Veri Guvenligi
 
@@ -406,7 +402,7 @@ export default function LegalPage({ user, onDeleteAccount, onRequireAuth }) {
           <div style={{ padding: 18 }}>
             <h2 style={{ margin: 0, fontFamily: ARCHIVO, fontSize: 20, fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.02em", color: C.ink }}>{page.title}</h2>
             <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.muted }}>
-              Son güncelleme: 2 Temmuz 2026 · YÜKLET · yuklet.co
+              Son güncelleme: 10 Ağustos 2026 · YÜKLET · yuklet.co
             </div>
 
             <div style={{ marginTop: 16, fontFamily: BODY, fontSize: 13, lineHeight: 1.6, color: C.sub }}>

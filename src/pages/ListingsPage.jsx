@@ -294,7 +294,10 @@ function ListingCard({ l, isFav = false, onToggleFav, rel, viewerRole }) {
             SAHA KAYDI
           </span>
         )}
-        {l.ownerRating && (
+        {/* Puan SAHA KAYDINDA gizlenir: firma henüz üye değil, kimse onu
+            değerlendirmedi. Varsayılan 5.0'ı yıldızla göstermek gerçek olmayan
+            bir itibar atfeder — hem alıcıyı yanıltır hem firmaya haksızlıktır. */}
+        {l.ownerRating && !(l.prospectId != null && l.ownerId == null) && (
           <span className="flex items-center gap-0.5" style={{ flexShrink: 0 }}>
             <Star size={9} color={C.ink} fill={C.yellow} strokeWidth={2} /> {l.ownerRating}
           </span>

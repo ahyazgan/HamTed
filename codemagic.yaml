@@ -170,7 +170,12 @@ workflows:
       vars:
         PACKAGE_NAME: "com.yuklet.app"
       node: 22
-      java: 17
+      # JDK 21 ZORUNLU: Capacitor 8 modullerinin hepsi Java 21 dil seviyesi ilan
+      # ediyor (android/app/capacitor.build.gradle -> VERSION_21, ayni sekilde
+      # @capacitor/android ve @capgo/capacitor-social-login). Projede
+      # jvmToolchain/foojay tanimi YOK, yani Gradle JDK'yi kendi indiremez.
+      # java: 17 ile bundleRelease "invalid source release: 21" ile duser.
+      java: 21
     scripts:
       - name: Ortam degiskenleri kontrolu
         script: |

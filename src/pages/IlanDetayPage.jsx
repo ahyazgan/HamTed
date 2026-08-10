@@ -591,7 +591,10 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
                       )}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
-                      {l.ownerRating != null && (
+                      {/* Saha kaydında puan GİZLENİR: firma henüz üye değil,
+                          kimse onu değerlendirmedi. Varsayılan 5.0'ı yıldızla
+                          basmak olmayan bir itibarı varmış gibi gösterirdi. */}
+                      {l.ownerRating != null && !isSaha && (
                         <div style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.sub, display: "flex", alignItems: "center", gap: 4 }}>
                           <Star size={12} strokeWidth={2.4} color={C.yellowDeep} fill={C.yellow} />
                           {l.ownerRating}{l.ownerJobs != null ? ` · ${l.ownerJobs} İŞ` : ""}
@@ -607,10 +610,15 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
                 </Tag>
               );
             })()}
-            <button onClick={() => navigate("/mesajlar")}
-              style={{ display: "flex", alignItems: "center", gap: 6, border: `2px solid ${C.ink}`, borderRadius: 6, background: C.yellow, padding: "9px 12px", fontFamily: HEAD, fontWeight: 800, fontSize: 12, textTransform: "uppercase", flexShrink: 0, cursor: "pointer" }}>
-              Mesaj
-            </button>
+            {/* Sahipsiz ilanda (saha kaydı / tanıtım) MESAJ ÖLÜ BİR BUTONDU:
+                sohbet yalnız kabul edilmiş teklifte açılır, buton boş gelen
+                kutusuna götürüyordu. Sahipsiz ilanda hiç gösterme. */}
+            {!isShowcase && (
+              <button onClick={() => navigate("/mesajlar")}
+                style={{ display: "flex", alignItems: "center", gap: 6, border: `2px solid ${C.ink}`, borderRadius: 6, background: C.yellow, padding: "9px 12px", fontFamily: HEAD, fontWeight: 800, fontSize: 12, textTransform: "uppercase", flexShrink: 0, cursor: "pointer" }}>
+                Mesaj
+              </button>
+            )}
           </div>
           {ownerPhone && (
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
@@ -788,7 +796,11 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setShowReport(true)}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flex: 1, background: C.card, border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px", fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.red, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer" }}>
-            <AlertTriangle size={15} strokeWidth={2.4} color={C.red} /> Şikayet et
+            {/* SAHA KAYDINDA metin değişir: burada "kötüye kullanan bir üye" yok,
+                bilgisi yayınlanan bir FİRMA var. Firmanın (ya da onu tanıyan
+                birinin) kaldırma talebi için görünür bir yol olmalı — Engelle
+                düğmesi sahipsiz ilanda anlamsız (engellenecek hesap yok). */}
+            <AlertTriangle size={15} strokeWidth={2.4} color={C.red} /> {isSaha ? "Kaldırılmasını iste" : "Şikayet et"}
           </button>
           {!isOwner && onToggleBlock && l.ownerId && (
             <button

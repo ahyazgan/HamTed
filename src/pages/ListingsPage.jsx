@@ -286,8 +286,10 @@ function ListingCard({ l, isFav = false, onToggleFav, rel, viewerRole }) {
         )}
         {/* SAHA KAYDI: firma sahada eklendi, henüz üye değil — iletişim saha
             hattı üzerinden. Rozet ŞEFFAFLIK için: bu ilan sahte değil, aracılı.
-            (Sahipsiz demo tanıtım ilanlarında prospectId yoktur, rozet çıkmaz.) */}
-        {l.prospectId != null && (
+            ownerId ŞARTI: (a) firma hesabını açınca ilan gerçekten onun olur,
+            rozet orada kalmamalı; (b) üye kendi ilanına prospectId yazarak
+            sahte "SAHA KAYDI" rozeti alamasın — rozet sahipsizlikle bağlı. */}
+        {l.prospectId != null && l.ownerId == null && (
           <span className="flex items-center gap-0.5" style={{ flexShrink: 0, padding: "1px 5px", borderRadius: 3, background: C.yellow, border: `1.5px solid ${C.ink}`, color: C.ink, fontWeight: 800, fontSize: 9 }}>
             SAHA KAYDI
           </span>

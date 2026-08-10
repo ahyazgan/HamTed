@@ -716,8 +716,24 @@ export default function IlanDetayPage({ listings = LISTINGS, user, fleet = [], o
           </div>
         )}
 
-        {/* Tanıtım ilanı: aksiyonların yerini alan pasif bilgi bloğu */}
-        {isShowcase && (
+        {/* SAHA KAYDI: GERÇEK firma, henüz üye değil. "Örnek amaçlıdır" demek
+            hem yalan olurdu hem de yukarıdaki gerçek saha hattı düğmesiyle
+            çelişirdi — alıcı arayacak mı aramayacak mı bilemezdi. */}
+        {isSaha && (
+          <div style={{ background: C.stone, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 16, textAlign: "center" }}>
+            <span style={{ display: "inline-block", fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", background: C.yellow, color: C.ink, border: `2px solid ${C.ink}`, borderRadius: 5, padding: "3px 9px" }}>
+              SAHA KAYDI
+            </span>
+            <p style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.sub, lineHeight: 1.55, margin: "10px 0 0" }}>
+              Bu firmayı YÜKLET saha ekibi ekledi ve bilgilerini firmadan aldı.
+              Firma henüz uygulamaya katılmadığı için teklif/kabul kapalıdır —
+              iletişim yukarıdaki saha hattı üzerinden kurulur.
+            </p>
+          </div>
+        )}
+
+        {/* Tanıtım ilanı (demo seed): aksiyonların yerini alan pasif bilgi bloğu */}
+        {isShowcase && !isSaha && (
           <div style={{ background: C.stone, border: `2px solid ${C.ink}`, borderRadius: 6, padding: 16, textAlign: "center" }}>
             <span style={{ display: "inline-block", fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", background: C.yellow, color: C.ink, border: `2px solid ${C.ink}`, borderRadius: 5, padding: "3px 9px" }}>
               TANITIM İLANI

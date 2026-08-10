@@ -59,17 +59,33 @@ Kisisel verileriniz, asagidaki durumlar disinda ucuncu taraflarla paylasilmaz:
 - Yasal zorunluluklar gerektirdiginde yetkili kurumlar
 - Platform altyapisini saglayan teknik hizmet saglayicilar
 
-## 4. Veri Guvenligi
+## 4. Uye Olmayan Firmalarin Vitrin Kayitlari
+
+YÜKLET saha ekibi, sahada yuz yuze gorustugu ve **acik rizasini aldigi** firmalarin
+ticari bilgilerini (firma adi, il/ilce, sattigi malzeme ve fiyati) firma henuz uye
+olmadan yayinlayabilir. Bu kayitlar ilan kartinda **"SAHA KAYDI"** rozetiyle
+isaretlenir.
+
+- Bu kayitlarda firmanin **kendi telefon numarasi yayinlanmaz**; iletisim YÜKLET
+  saha hatti uzerinden kurulur.
+- Firma dilediginde kendi hesabini acarak kaydin sahipligini devralabilir.
+- **Kaydin kaldirilmasi:** info@yuklet.co adresine firma adiyla yazmaniz yeterlidir;
+  talep en gec **7 gun** icinde islenir ve kayit yayindan kaldirilir. KVKK
+  kapsamindaki diger talepleriniz icin kvkk@yuklet.co.
+- Bu kayitlar ticari faaliyet bilgisidir; kisisel veri iceren alanlar (yetkili
+  telefonu, e-postasi) yalnizca saha ekibince gorulur, uygulamada yayinlanmaz.
+
+## 5. Veri Guvenligi
 
 - 256-bit SSL sifreleme ile veri iletimi
 - Erisim kontrolu ve yetkilendirme mekanizmalari
 - Duzenli guvenlik denetimleri
 
-## 5. Cerezler ve Yerel Depolama
+## 6. Cerezler ve Yerel Depolama
 
 Mobil uygulama cerez kullanmaz. Oturum bilgileriniz ve tercihleriniz (orn. engellediginiz kullanicilar) cihazinizin guvenli yerel depolamasinda tutulur. Uygulamada ucuncu taraf reklam veya analitik SDK'si yoktur.
 
-## 6. Haklariniz
+## 7. Haklariniz
 
 6698 sayili KVKK kapsaminda asagidaki haklara sahipsiniz:
 
@@ -81,7 +97,7 @@ Mobil uygulama cerez kullanmaz. Oturum bilgileriniz ve tercihleriniz (orn. engel
 
 Basvurulariniz icin: kvkk@yuklet.co
 
-## 7. Iletisim
+## 8. Iletisim
 
 Veri sorumlusu: YÜKLET (yuklet.co)
 E-posta: info@yuklet.co

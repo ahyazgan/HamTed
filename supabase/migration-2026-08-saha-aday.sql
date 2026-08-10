@@ -137,14 +137,24 @@ begin
     allowed := allowed || array['accepted_by_id','assigned_vehicle'];
   end if;
   -- YENİ — SAHİPLENME geçişi (saha aday kaydı): sahipsiz vitrin ilanı, firma
-  -- kendi hesabını açınca ona devredilir. Güvenli, çünkü üç koşul birden aranır:
+  -- kendi hesabını açınca ona devredilir. DÖRT koşul birden aranır:
   --   • ilan gerçekten SAHİPSİZ (old.owner_id is null)
-  --   • bir ADAY KAYDA bağlı (old.prospect_id is not null) — rastgele demo ilan değil
-  --   • ve yalnız KENDİNE atanabilir (new.owner_id = auth.uid())
-  -- Jetonu bilmeyen zaten claim_prospect'ten geçemez; bu istisna son kapıdır.
+  --   • bir ADAY KAYDA bağlı (old.prospect_id is not null) ve bu bağ değişmiyor
+  --   • yalnız KENDİNE atanabilir (new.owner_id = auth.uid())
+  --   • ve o aday kaydını GERÇEKTEN bu kişi sahiplenmiş (prospects.claimed_by)
+  -- DÜZELTME 2026-08-10: son koşul başlangıçta YOKTU. "Jetonu bilmeyen zaten
+  -- claim_prospect'ten geçemez" varsayımı yanlıştı — trigger, UPDATE'in RPC'den
+  -- mi yoksa doğrudan REST'ten mi geldiğini bilmez. Sahte 'kabul' teklifiyle
+  -- sefer tarafı olan biri vitrin ilanını jetonsuz üstüne geçirebiliyordu
+  -- (canlı ortamda kanıtlandı). claimed_by'ı yalnız claim_prospect yazabilir
+  -- (prospects RLS = admin), bu yüzden kapı artık gerçekten kapalı.
   if old.owner_id is null and old.prospect_id is not null
      and new.owner_id = auth.uid()
-     and new.prospect_id is not distinct from old.prospect_id then
+     and new.prospect_id is not distinct from old.prospect_id
+     and exists (
+       select 1 from public.prospects p
+        where p.id = old.prospect_id and p.claimed_by = auth.uid()
+     ) then
     allowed := allowed || array['owner_id','owner_name','owner_logo','owner_verified','owner_rating'];
   end if;
   if (to_jsonb(new) - allowed) is distinct from (to_jsonb(old) - allowed) then
@@ -165,7 +175,7 @@ create trigger on_listing_driver_guard
 -- kaydı ile bağlı TÜM vitrin ilanlarını tek dokunuşta canlıya alır.
 create or replace function public.publish_prospect(p_id bigint)
 returns public.prospects language plpgsql security definer set search_path = public as $$
-declare p public.prospects;
+declare p public.prospects; v_hat text;
 begin
   if not public.is_admin() then raise exception 'Yetki yok.'; end if;
   select * into p from public.prospects where id = p_id for update;
@@ -173,6 +183,13 @@ begin
   -- Kısıt zaten engelliyor; buradaki amaç panelde ANLAŞILIR hata göstermek.
   if p.consent_at is null then
     raise exception 'Rıza kaydı yok — firma "evet" demeden vitrin yayınlanamaz.';
+  end if;
+  -- Saha hattı girilmeden yayın YOK (2026-08-10): vitrin ilanında firmanın
+  -- numarası değil YÜKLET saha hattı görünür. Numara yoksa ilan panoya
+  -- "aranacak kimsesi olmayan" ölü bir kayıt olarak çıkar.
+  select coalesce(value->>'phone','') into v_hat from public.app_config where key = 'saha_hatti';
+  if coalesce(v_hat,'') = '' then
+    raise exception 'Saha hattı numarası girilmemiş — vitrin ilanında aranacak numara görünmez. Panel > Saha > Saha hattı alanını doldur.';
   end if;
   update public.prospects set status = 'yayinda' where id = p_id returning * into p;
   update public.listings set status = 'aktif'
@@ -262,6 +279,14 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'kurulu_hesap', 'name', p.name);
   end if;
 
+  -- ── SAHİPLENME DAMGASI (EN ÖNCE) ─────────────────────────────────
+  -- guard_driver_listing_update aşağıdaki listings UPDATE'inde
+  -- prospects.claimed_by = auth.uid() ARAR (2026-08-10 güvenlik düzeltmesi).
+  -- Damga sonraya kalırsa devir kendi guard'ına takılır.
+  update public.prospects
+     set claimed_by = me, claimed_at = now(), status = 'sahiplenildi'
+   where id = p.id;
+
   -- ── Profili doldur ────────────────────────────────────────────────
   -- Firma adı HER ZAMAN yazılır (aday kaydının bütün anlamı bu; Google'dan gelen
   -- kişisel ad yerine firma adı görünmeli). Diğer alanlar YALNIZ boşsa: üye
@@ -297,10 +322,6 @@ begin
     status         = case when l.status = 'kapali' then 'aktif' else l.status end
    where l.prospect_id = p.id and l.owner_id is null;
   get diagnostics v_count = row_count;
-
-  update public.prospects
-     set claimed_by = me, claimed_at = now(), status = 'sahiplenildi'
-   where id = p.id;
 
   return jsonb_build_object('ok', true, 'name', p.name, 'role', p.role, 'listings', v_count);
 end; $$;

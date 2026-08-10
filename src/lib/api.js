@@ -799,6 +799,14 @@ export async function unpublishProspect(id) {
   if (error) throw error;
   return data ? rowToProspect(data) : null;
 }
+// Devri geri al: yanlış kişi sahiplendiyse tek çıkış yolu. Aday kaydından
+// doğmuş ilanlar yeniden sahipsiz+kapalı olur, damga silinir, JETON YENİLENİR
+// (sızmış eski davet linki ölür). Kişinin sonradan kendi açtığı ilanlara dokunmaz.
+export async function releaseProspect(id) {
+  const { data, error } = await supabase.rpc("release_prospect", { p_id: id });
+  if (error) throw error;
+  return data ? rowToProspect(data) : null;
+}
 
 // Davet linki karşılaması — KAYITSIZ da çağırabilir (kişi henüz üye değil).
 // Sunucu yalnız firma adı + rol + il döndürür; telefon/e-posta/not asla.

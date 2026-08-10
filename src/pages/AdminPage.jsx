@@ -131,7 +131,7 @@ const btnBase = {
   letterSpacing: "-0.01em", lineHeight: 1, whiteSpace: "nowrap",
 };
 
-export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [], searchSignals = [], onRunRecurrences, prospects = [], onSaveProspect, onProspectConsent, onPublishProspect, sahaHatti = "", onSaveSahaHatti }) {
+export default function AdminPage({ user, reports = [], docs = [], users = [], listings = [], offers = [], onRequireAuth, onSetReportStatus, onReviewDoc, onUpdateUser, onResolveDispute, audit = [], onLog, onUpdateListing, announcement, onSaveAnnouncement, adminNotes = {}, onSaveAdminNote, tapStats = [], deletedAccounts = [], searchSignals = [], onRunRecurrences, prospects = [], onSaveProspect, onProspectConsent, onPublishProspect, onReleaseProspect, sahaHatti = "", onSaveSahaHatti }) {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const toast = useToast();
@@ -193,6 +193,22 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
     const yayinla = p.status !== "yayinda";
     const res = await onPublishProspect?.(p.id, yayinla);
     toast?.(res?.ok === false ? (res.error || "İşlem başarısız") : (yayinla ? "Vitrin yayında" : "Vitrin geri alındı"), res?.ok === false ? "error" : "success");
+  };
+  // Devri geri al: geri dönülmez bir işlem değil ama ilanları kapatıyor —
+  // firma adını elle yazdırarak yanlış karta basmayı imkânsız kıl.
+  const devriGeriAl = async (p) => {
+    const yazilan = window.prompt(
+      `DEVRİ GERİ AL\n\n"${p.name}" kaydı ${p.claimedBy ? "bir hesaba bağlı" : "sahiplenilmiş"}.\n` +
+      `Geri alınca: bu adaydan doğan ilanlar SAHİPSİZ + KAPALI olur, davet linki YENİLENİR (eski link ölür).\n` +
+      `Kişinin sonradan kendi açtığı ilanlara dokunulmaz.\n\n` +
+      `Onaylamak için firma adını yaz:`, "");
+    if (yazilan === null) return;
+    if (yazilan.trim().toLocaleLowerCase("tr") !== String(p.name || "").trim().toLocaleLowerCase("tr")) {
+      toast?.("Firma adı eşleşmedi — işlem iptal edildi.", "error");
+      return;
+    }
+    const res = await onReleaseProspect?.(p.id);
+    toast?.(res?.ok === false ? (res.error || "Geri alınamadı") : "Devir geri alındı, davet linki yenilendi", res?.ok === false ? "error" : "success");
   };
   const davetPaylas = async (p) => {
     const url = prospectShareUrl(p.token);
@@ -676,9 +692,16 @@ export default function AdminPage({ user, reports = [], docs = [], users = [], l
                   </div>
 
                   {p.note && <div style={{ fontFamily: BODY, fontSize: 12, color: C.sub, lineHeight: 1.5 }}>{p.note}</div>}
-                  {sahiplenen && (
-                    <div style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>
-                      ↳ hesabını açtı: {sahiplenen.name} · {fmt(p.claimedAt)}
+                  {p.claimedBy && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ flex: 1, minWidth: 140, fontFamily: MONO, fontSize: 10, color: C.green }}>
+                        ↳ hesabını açtı: {sahiplenen?.name || "(üye)"} · {fmt(p.claimedAt)}
+                      </span>
+                      {/* Yanlış kişi devraldıysa TEK çıkış yolu bu. Olmadan firma kaybedilirdi. */}
+                      <button onClick={() => devriGeriAl(p)}
+                        style={{ flexShrink: 0, cursor: "pointer", padding: "5px 9px", borderRadius: 4, border: `2px solid ${C.ink}`, background: C.card, color: C.red, fontFamily: MONO, fontSize: 9.5, fontWeight: 700 }}>
+                        DEVRİ GERİ AL
+                      </button>
                     </div>
                   )}
 

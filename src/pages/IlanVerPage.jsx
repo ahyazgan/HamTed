@@ -5,7 +5,7 @@
 // ALL original functionality preserved: edit mode, validation, price
 // estimate, map location picker, recurring job, every form field.
 
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CATS, LISTING_TYPES, VEHICLE_TYPES, MATERIALS, UNITS, STOCK_LEVELS } from "../data/categories";
 import { IL_LIST } from "../data/listings";
@@ -195,10 +195,13 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
   const asProspect = (adayId && isAdmin(user))
     ? prospects.find((p) => String(p.id) === String(adayId)) || null
     : null;
-  // Aynı güvenlik kapısı: URL "aday" diyor ama kayıt çözülemedi (sayfa doğrudan
-  // yenilendi → prospects henüz yüklenmedi, ya da id yanlış). Sessizce admin'in
-  // kendi adına ilan AÇMA — sahiplik sessizce kaymasın.
-  const adayCozulemedi = Boolean(adayId) && !asProspect;
+  // Aynı güvenlik kapısı: URL "aday" diyor ama kayıt çözülemedi. Sessizce
+  // admin'in kendi adına ilan AÇMA — sahiplik sessizce kaymasın.
+  // İKİ AYRI DURUM: liste henüz gelmedi (sayfa doğrudan açıldı/yenilendi) ile
+  // id gerçekten yok. İkisini "Aday firma bulunamadı" diye göstermek, bir saniye
+  // sonra kaybolan yanlış bir hata ekranı basıyordu.
+  const adayYukleniyor = Boolean(adayId) && !asProspect && prospects.length === 0;
+  const adayCozulemedi = Boolean(adayId) && !asProspect && prospects.length > 0;
   // actor: ilanın SAHİBİ olacak kişi. Vitrin ilanında gerçek sahip yok; rol-tür
   // kuralı adayın rolünden işlesin diye aday sahte bir "actor" gibi kullanılır.
   const actor = asUser || asProspect || user;
@@ -249,6 +252,22 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
     recurring: false, recurringFreq: "haftalik", recurringDuration: "", dailyTrips: "",
     stock: "bol", deliveryIncluded: false,
   });
+  // Aday firma GEÇ gelirse (sayfa doğrudan açıldı → prospects asenkron yüklendi)
+  // form useState'i onsuz kurulmuştur; ad/il/ilçe ön-doldurması kalıcı kaybolurdu.
+  // Aday ilk göründüğünde bir KEZ doldur — o an form henüz taze.
+  const adayDolduRef = useRef(false);
+  useEffect(() => {
+    if (!asProspect || adayDolduRef.current) return;
+    adayDolduRef.current = true;
+    setForm((f) => ({
+      ...f,
+      owner: f.owner || asProspect.name || "",
+      il: asProspect.il || f.il,
+      ilce: f.ilce || asProspect.ilce || "",
+      varisIl: asProspect.il || f.varisIl,
+    }));
+  }, [asProspect]);
+
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);   // yayınla/kaydet gönderimi (çift-tık koruması)
   const [pickup, setPickup] = useState(editListing?.pickup || null);
@@ -495,6 +514,18 @@ export default function IlanVerPage({ onPublish, onUpdate, listings = [], offers
             Adına ilan açılacak üye çözülemedi. Bu sayfayı doğrudan açtıysan üye listesi henüz yüklenmemiş olabilir — panele dönüp üye kartındaki <b>Adına ilan ver</b> düğmesini kullan.
           </p>
           <button onClick={() => navigate("/admin")} style={{ background: C.ink, color: C.yellow, fontFamily: ARCH, fontSize: 13, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 6, padding: "12px 20px", cursor: "pointer" }}>Panele dön</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── gate: aday listesi henüz gelmedi ──
+  // Hata DEĞİL, bekleme. (Forma düşmek yasak: actor admin'e kayar.)
+  if (adayYukleniyor) {
+    return (
+      <div style={{ ...shell, paddingBottom: 96 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "96px 24px 0", textAlign: "center" }}>
+          <div style={{ fontFamily: MONO, fontSize: 12, color: C.sub }}>Aday firma yükleniyor…</div>
         </div>
       </div>
     );

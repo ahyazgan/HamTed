@@ -48,8 +48,12 @@ create table if not exists public.app_config (
 alter table public.app_config enable row level security;
 drop policy if exists app_config_read  on public.app_config;
 drop policy if exists app_config_write on public.app_config;
+-- NOT (2026-08-10): 'saha_hatti' sonradan eklendi (migration-2026-08-saha-aday).
+-- Bu dosya TEKRAR calistirilirsa politikayi eski haline dondurup saha hatti
+-- numarasini kayitsiz ziyaretciden gizlerdi -> vitrin ilanlarinda iletisim
+-- sessizce kaybolurdu. Iki anahtar birlikte tutulur.
 create policy app_config_read on public.app_config
-  for select using (key = 'announcement' or public.is_admin());
+  for select using (key in ('announcement','saha_hatti') or public.is_admin());
 create policy app_config_write on public.app_config
   for all using (public.is_admin()) with check (public.is_admin());
 grant select on public.app_config to anon, authenticated;

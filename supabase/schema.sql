@@ -487,7 +487,19 @@ create policy offers_read on public.offers for select using (
 -- Teklif / Kabul % / Eslesme sayaclari sessizce yanlis cikar.
 drop policy if exists offers_admin_read on public.offers;
 create policy offers_admin_read on public.offers for select using (public.is_admin());
-create policy offers_insert on public.offers for insert with check (auth.uid() = from_user_id);
+-- GUVENLIK (2026-08-10): teklif YALNIZ 'beklemede' dogar. Onceden status uzerinde
+-- ne kisit ne trigger vardi; herhangi bir uye BASKASININ ilanina status='kabul'
+-- teklif INSERT edip is_trip_party() sinavini geciyordu. Bu bir "kagit ustunde
+-- teklif" degil YETKI YUKSELTMESIDIR: saldirgan o ilanin sefer alanlarini
+-- (phase/status/delivery_proof/payment_*) yazabiliyor, trip_locations GPS izini
+-- okuyup yazabiliyor ve sohbete girebiliyordu. Canli ortamda kanitlandi.
+-- 'kabul'/'ret' yazma yetkisi tek yerde kalir: accept_job / accept_offer
+-- (SECURITY DEFINER, RLS'i atlar — bu politika onlari ETKILEMEZ).
+create policy offers_insert on public.offers for insert with check (
+  auth.uid() = from_user_id
+  and coalesce(status, 'beklemede') = 'beklemede'
+  and not public.is_banned()
+);
 create policy offers_update on public.offers for update using (
   auth.uid() = (select owner_id from public.listings l where l.id = listing_id)
 );
@@ -1403,11 +1415,22 @@ begin
      and old.accepted_by_id = auth.uid() and new.accepted_by_id is null then
     allowed := allowed || array['accepted_by_id','assigned_vehicle'];
   end if;
-  -- SAHIPLENME gecisi (saha aday kaydi). Guvenli: ilan gercekten SAHIPSIZ,
-  -- bir ADAY KAYDA bagli (rastgele demo ilan degil) ve yalniz KENDINE atanabilir.
+  -- SAHIPLENME gecisi (saha aday kaydi). DORT kosul birden aranir:
+  --   • ilan gercekten SAHIPSIZ
+  --   • bir ADAY KAYDA bagli ve bu bag degismiyor
+  --   • yalniz KENDINE ataniyor
+  --   • ve o aday kaydini GERCEKTEN bu kisi sahiplenmis (claimed_by)
+  -- Son kosul KRITIK: claimed_by'i yalniz claim_prospect yazabilir (prospects
+  -- RLS = admin), yani davet jetonundan gecmeyen kimse buraya giremez. O kosul
+  -- olmadan, sahte "kabul" teklifiyle sefer tarafi olan biri vitrin ilanini
+  -- jetonsuz ustune gecirebiliyordu (2026-08-10 denetimi, canlida kanitlandi).
   if old.owner_id is null and old.prospect_id is not null
      and new.owner_id = auth.uid()
-     and new.prospect_id is not distinct from old.prospect_id then
+     and new.prospect_id is not distinct from old.prospect_id
+     and exists (
+       select 1 from public.prospects p
+        where p.id = old.prospect_id and p.claimed_by = auth.uid()
+     ) then
     allowed := allowed || array['owner_id','owner_name','owner_logo','owner_verified','owner_rating'];
   end if;
   if (to_jsonb(new) - allowed) is distinct from (to_jsonb(old) - allowed) then
@@ -1423,13 +1446,20 @@ create trigger on_listing_driver_guard
 -- d) YAYINLA / GERI AL (admin). Taslak adayin ilanlari 'kapali' durur.
 create or replace function public.publish_prospect(p_id bigint)
 returns public.prospects language plpgsql security definer set search_path = public as $$
-declare p public.prospects;
+declare p public.prospects; v_hat text;
 begin
   if not public.is_admin() then raise exception 'Yetki yok.'; end if;
   select * into p from public.prospects where id = p_id for update;
   if not found then raise exception 'Aday kayıt bulunamadı.'; end if;
   if p.consent_at is null then
     raise exception 'Rıza kaydı yok — firma "evet" demeden vitrin yayınlanamaz.';
+  end if;
+  -- Saha hatti girilmeden yayin YOK: vitrin ilaninda firmanin numarasi degil
+  -- YUKLET saha hatti gorunur. Numara yoksa ilan "aranacak kimsesi olmayan"
+  -- olu bir kayit olarak panoya cikar.
+  select coalesce(value->>'phone','') into v_hat from public.app_config where key = 'saha_hatti';
+  if coalesce(v_hat,'') = '' then
+    raise exception 'Saha hattı numarası girilmemiş — vitrin ilanında aranacak numara görünmez. Panel > Saha > Saha hattı alanını doldur.';
   end if;
   update public.prospects set status = 'yayinda' where id = p_id returning * into p;
   update public.listings set status = 'aktif'
@@ -1456,6 +1486,40 @@ begin
 end; $$;
 revoke all on function public.unpublish_prospect(bigint) from public, anon;
 grant execute on function public.unpublish_prospect(bigint) to authenticated;
+
+-- DEVRI GERI AL (2026-08-10) — yanlis kisi sahiplendiyse tek cikis yolu.
+-- Devrin tam TERSI: aday kaydindan dogmus ilanlar yeniden SAHIPSIZ + kapali
+-- olur, damga silinir, aday 'taslak'a doner ve JETON YENILENIR (sizmis eski
+-- link olur). Kisinin devir SONRASI kendi actigi ilanlar (prospect_id bos)
+-- DOKUNULMAZ. Bu olmadan yanlis devir geri alinamazdi.
+create or replace function public.release_prospect(p_id bigint)
+returns public.prospects language plpgsql security definer set search_path = public as $$
+declare p public.prospects; v_eski uuid; v_geri int := 0;
+begin
+  if not public.is_admin() then raise exception 'Yetki yok.'; end if;
+  select * into p from public.prospects where id = p_id for update;
+  if not found then raise exception 'Aday kayıt bulunamadı.'; end if;
+  if p.claimed_by is null then
+    raise exception 'Bu aday kaydı zaten sahiplenilmemiş.';
+  end if;
+  v_eski := p.claimed_by;
+
+  update public.listings set
+    owner_id = null, owner_verified = false, owner_rating = 5.0, status = 'kapali'
+   where prospect_id = p_id and owner_id = v_eski;
+  get diagnostics v_geri = row_count;
+
+  update public.prospects set
+    claimed_by = null, claimed_at = null, status = 'taslak',
+    token = public.gen_invite_code() || public.gen_invite_code(),
+    note = trim(both E'\n' from coalesce(note,'') || E'\n[devir geri alındı ' ||
+           to_char(now(), 'DD.MM.YYYY HH24:MI') || ' · ' || v_geri || ' ilan kapatıldı · yeni davet linki üretildi]')
+   where id = p_id
+  returning * into p;
+  return p;
+end; $$;
+revoke all on function public.release_prospect(bigint) from public, anon;
+grant execute on function public.release_prospect(bigint) to authenticated;
 
 -- e) DAVET LINKI — karsilama. KAYITSIZ da cagirir (kisi henuz uye degil, butun
 --    mesele bu), o yuzden YALNIZ firma adi + rol + il doner; phone/email/note asla.
@@ -1508,6 +1572,13 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'kurulu_hesap', 'name', p.name);
   end if;
 
+  -- SAHIPLENME DAMGASI EN ONCE: guard_driver_listing_update asagidaki listings
+  -- UPDATE'inde prospects.claimed_by = auth.uid() ARAR. Damga sonraya kalirsa
+  -- devir kendi guard'ina takilirdi (ayni transaction, sirali gorunum).
+  update public.prospects
+     set claimed_by = me, claimed_at = now(), status = 'sahiplenildi'
+   where id = p.id;
+
   -- Firma adi HER ZAMAN yazilir (Google'dan gelen kisisel ad yerine firma adi
   -- gorunmeli). Diger alanlar YALNIZ bossa: uyenin kendi girdigi veri ustundur.
   -- role: guard_profile_update yalniz '' ya da eski default 'isveren' iken izin
@@ -1537,10 +1608,6 @@ begin
     status         = case when l.status = 'kapali' then 'aktif' else l.status end
    where l.prospect_id = p.id and l.owner_id is null;
   get diagnostics v_count = row_count;
-
-  update public.prospects
-     set claimed_by = me, claimed_at = now(), status = 'sahiplenildi'
-   where id = p.id;
 
   return jsonb_build_object('ok', true, 'name', p.name, 'role', p.role, 'listings', v_count);
 end; $$;

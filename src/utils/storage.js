@@ -134,11 +134,20 @@ export const savePendingInvite = (v) => saveStr("hamted_pending_invite", v || ""
 export const clearPendingInvite = () => saveStr("hamted_pending_invite", "");
 // Saha aday kaydi jetonu: firma /?firma=TOKEN linkiyle geldi ama HENUZ giris
 // yapmadi. Jeton burada bekler; oturum acilinca claim_prospect ile aday kayit
-// + vitrin ilanlari o hesaba gecer. Davet kodunun birebir ikizi — ayri anahtar,
-// cunku ikisi ayni anda bekleyebilir (davetle gelen firma linkine de tiklayabilir).
-export const loadPendingProspect = () => loadStr("hamted_pending_prospect", "");
-export const savePendingProspect = (v) => saveStr("hamted_pending_prospect", v || "");
-export const clearPendingProspect = () => saveStr("hamted_pending_prospect", "");
+// + vitrin ilanlari o hesaba gecer. Davet kodunun ikizi — ayri anahtar, cunku
+// ikisi ayni anda bekleyebilir.
+// SURE SINIRI (2 saat): jeton damgasiyla saklanir. Aksi halde linke tiklayip
+// kaydolmayan birinin ardindan AYNI CIHAZDA giris yapan BASKA biri firmayi
+// sessizce devralirdi (paylasilan tablet/telefon saha turunda siradan).
+const PROSPECT_TTL = 2 * 60 * 60 * 1000;
+export const loadPendingProspect = () => {
+  const r = load("hamted_pending_prospect", null);
+  if (!r || !r.t) return "";
+  if (!r.at || Date.now() - r.at > PROSPECT_TTL) { save("hamted_pending_prospect", null); return ""; }
+  return r.t;
+};
+export const savePendingProspect = (v) => save("hamted_pending_prospect", v ? { t: v, at: Date.now() } : null);
+export const clearPendingProspect = () => save("hamted_pending_prospect", null);
 
 // Admin denetim kaydi (audit log) — kim, ne zaman, ne yapti.
 export const loadAuditLog = () => load("hamted_audit_log", []);

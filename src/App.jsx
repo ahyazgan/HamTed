@@ -167,7 +167,16 @@ function AppShell() {
   const [sahaHatti, setSahaHatti] = useState("");
   useEffect(() => {
     if (!SB) return;
-    api.fetchAppConfig("saha_hatti").then((v) => setSahaHatti(String(v?.phone || ""))).catch(() => {});
+    // Duyuruyla aynı desen: öne gelince de tazele. Yalnız mount'ta çekseydik,
+    // uygulamayı açık tutan alıcı saha turunda YENİ girilen numarayı hiç
+    // görmezdi ve vitrin ilanında iletişim boş kalırdı.
+    const cek = () => {
+      if (document.visibilityState === "hidden") return;
+      api.fetchAppConfig("saha_hatti").then((v) => setSahaHatti(String(v?.phone || ""))).catch(() => {});
+    };
+    cek();
+    document.addEventListener("visibilitychange", cek);
+    return () => document.removeEventListener("visibilitychange", cek);
   }, [SB]);
   const saveSahaHatti = async (phone) => {
     if (!SB) return { ok: false, error: "Sunucu bağlantısı yok." };
@@ -522,6 +531,9 @@ function AppShell() {
   // hesabını açınca (claim_prospect) her şey ona devredilir. SB-only: yerel
   // önizlemede saha turu diye bir şey yok, panel sekmesi boş görünür.
   const [prospects, setProspects] = useState([]);
+  // Davet linki sayacı: uygulama AÇIKKEN /?firma=TOKEN gelirse sahiplenme
+  // bloğunu yeniden tetikler (user.id değişmediği için tek başına yetmiyordu).
+  const [prospectTick, setProspectTick] = useState(0);
   // ── TALEP SİNYALİ: "aradı ama bulamadı" kaydı ──────────────────────
   // Sonuçsuz arama, geriye dönük ASLA toplanamayan veri: kullanıcı arar,
   // ekran boş gelir, bilgi buhar olur. Panelde "Bergama · mıcır · 14 arama
@@ -787,6 +799,19 @@ function AppShell() {
       return { ok: true };
     } catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Vitrin durumu değiştirilemedi.") }; }
   };
+  // Devri geri al — yanlış kişi sahiplendiğinde. Geri dönülmez bir hata olmasın
+  // diye panelde onay istenir; sunucu ilanları sahipsiz+kapalı yapar ve davet
+  // jetonunu yeniler (sızmış link ölür).
+  const releaseProspect = async (id) => {
+    if (!SB) return { ok: false, error: "Saha aday kaydı yalnız sunucu modunda çalışır." };
+    try {
+      const rec = await api.releaseProspect(id);
+      setProspects((prev) => prev.map((p) => (p.id === id ? (rec || p) : p)));
+      await reloadListings();
+      logAdmin("aday", `${rec?.name || id}: devir GERİ ALINDI, davet linki yenilendi`);
+      return { ok: true };
+    } catch (e) { console.error(e); return { ok: false, error: api.trMsg(e, "Devir geri alınamadı.") }; }
+  };
   // Admin: herhangi bir kullaniciyi guncelle (ban/askiya al/rol/manuel onay).
   const updateUserAdmin = async (userId, patch) => {
     // SB modunda önce DB'ye yaz; başarısızsa yerel state'i HİÇ değiştirme
@@ -994,7 +1019,11 @@ function AppShell() {
           const res = await api.claimProspect(adayJeton);
           clearPendingProspect();
           setProspectWelcome(null);
-          if (res?.ok) {
+          if (res?.ok && res.reason === "zaten_sahiplenildi") {
+            // AYNI hesap linke tekrar tıkladı: sunucu ok:true döner (akış bozulmasın)
+            // ama hiçbir devir OLMADI. "Profilin aktarıldı" demek yanıltıcı olurdu.
+            toast(`${res.name} zaten bu hesaba bağlı.`, "info", 4000);
+          } else if (res?.ok) {
             // Profil + ilanlar sunucuda değişti; ikisini de tazele yoksa üye
             // kendi firmasını ve devredilen ilanlarını göremez. Rol de burada
             // dolduğu için lastGoodProfileRef güncellenir — aksi halde bir
@@ -1015,6 +1044,12 @@ function AppShell() {
             toast("Bu davet linki daha önce başka bir hesapta kullanılmış.", "error", 5000);
           } else if (res?.reason === "kurulu_hesap") {
             toast(`${res.name || "Bu firma"} kaydı yalnız yeni açılan bir hesaba aktarılabilir. Kendi ilanların olan hesapla devralınamaz.`, "error", 6000);
+          } else if (res?.reason === "kapali") {
+            toast("Bu firma kaydı kapatılmış. Seni davet edenle iletişime geç.", "error", 5000);
+          } else {
+            // bulunamadi / hata / bos: SESSİZ KALMA. Firma linke tıkladı, kaydoldu
+            // ve hiçbir şey olmadı — sebebini bilmezse platformu terk eder.
+            toast("Davet bağlantısı geçersiz ya da süresi dolmuş. Linki yeniden iste.", "error", 6000);
           }
         })();
       }
@@ -1029,8 +1064,11 @@ function AppShell() {
     runRecurrencesLocal();
     // users/userListings kasten bağımlılık DEĞİL: bu blok oturum başına bir kez
     // çalışmalı, her ilan değişiminde yeniden değil.
+    // prospectTick: uygulama AÇIKKEN gelen /?firma= linki user.id'yi
+    // değiştirmediği için bu blok yeniden çalışmazdı — jeton yerelde bekler,
+    // hiçbir şey olmaz, firma "tıkladım bir şey olmadı" derdi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [SB, user?.id]);
+  }, [SB, user?.id, prospectTick]);
 
   // Son giriş damgası: oturum açık kullanıcı uygulamayı her açtığında bir kez
   // dokunur (RPC 1 saatten yeni damgayı tekrar yazmaz). Admin "7 gündür girmemiş"
@@ -1160,17 +1198,29 @@ function AppShell() {
     if (!token) return;
     const t = token.trim().slice(0, 24);
     savePendingProspect(t);
-    if (SB) api.prospectByToken(t).then((p) => { if (p?.name) setProspectWelcome(p); }).catch(() => {});
+    // Zaten giriş yapmış biri linke tıkladıysa sahiplenmeyi ŞİMDİ tetikle.
+    if (user?.id) setProspectTick((n) => n + 1);
     try {
       const u = new URL(window.location.href);
       u.searchParams.delete("firma");
       window.history.replaceState({}, "", u.pathname + u.search + u.hash);
     } catch { /* noop */ }
-    // Kayıtsız ziyaretçiye giriş ekranını doğrudan aç: link zaten "hesabını aç"
-    // çağrısı, ayrıca bir düğme aratmanın anlamı yok.
-    if (!user?.id) setShowAuth(true);
+    // Firma bilgisi ÖNCE gelsin, giriş ekranı SONRA açılsın. Aksi halde AuthModal
+    // prospect=null iken mount olur; React useState BAŞLANGIÇ değerlerini prop
+    // değişiminde güncellemediği için form "giriş" modunda kilitlenir, rol
+    // kartları gizlenir ama rol seçili olmaz ve kayıt İMKÂNSIZ hale gelirdi.
+    // RPC hata verse bile modal açılmalı: bu yüzden finally.
+    let iptal = false;
+    const ac = () => { if (!iptal && authReady && !user?.id) setShowAuth(true); };
+    if (SB) {
+      api.prospectByToken(t)
+        .then((p) => { if (!iptal && p?.name) setProspectWelcome(p); })
+        .catch(() => {})
+        .finally(ac);
+    } else ac();
+    return () => { iptal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search, SB]);
+  }, [location.search, SB, authReady]);
 
   // ── Giris: E-POSTA / SIFRE (kayit + giris) ───────────────────
   // SB modu: signUp/signIn Supabase'e yazar; onAuthChange oturumu kurar. Onay
@@ -1448,7 +1498,7 @@ function AppShell() {
                 <Route path="/mesajlar" element={<PageTransition><MesajlarPage user={user} listings={listings} offers={offers} messages={messages} onSendMessage={addMessage} onRequireAuth={requireAuth} onSeen={markMessagesSeen} onMarkThreadRead={markThreadRead} getContact={getContact} msgSeen={msgSeen} blockedIds={myBlocked} onReport={addReport} onToggleBlock={toggleBlock} /></PageTransition>} />
                 <Route path="/profil" element={<PageTransition><ProfilPage user={user} onUpdateProfile={updateProfile} onRequireAuth={requireAuth} onLogout={logout} onDeleteAccount={deleteAccount} reviews={reviews} getUserRating={getUserRating} listings={listings} offers={offers} docs={docs.filter(d => user && String(d.ownerId) === String(user.id))} onAddDoc={addDoc} onRemoveDoc={removeDoc} notifPrefs={notifPrefs} onUpdateNotifPrefs={updateNotifPrefs} onReport={addReport} blockedIds={myBlocked} onToggleBlock={toggleBlock} getContact={getContact} invite={invite} /></PageTransition>} />
                 <Route path="/panel" element={<PageTransition><DashboardPage user={user} listings={listings} offers={offers} messages={messages} onRequireAuth={requireAuth} /></PageTransition>} />
-                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} adminNotes={adminNotes} onSaveAdminNote={saveAdminNote} tapStats={adminTapStats} deletedAccounts={deletedAccounts} searchSignals={searchSignals} onRunRecurrences={runAllRecurrences} prospects={prospects} onSaveProspect={saveProspect} onProspectConsent={setProspectConsent} onPublishProspect={publishProspect} sahaHatti={sahaHatti} onSaveSahaHatti={saveSahaHatti} /></PageTransition>} />
+                <Route path="/admin" element={<PageTransition><AdminPage user={user} reports={reports} docs={allDocs} users={users} listings={allListings} offers={offers} audit={audit} onRequireAuth={requireAuth} onSetReportStatus={setReportStatus} onReviewDoc={reviewDoc} onUpdateUser={updateUserAdmin} onResolveDispute={resolveDispute} onLog={logAdmin} onUpdateListing={updateListing} announcement={announcement} onSaveAnnouncement={saveAnnouncementAdmin} adminNotes={adminNotes} onSaveAdminNote={saveAdminNote} tapStats={adminTapStats} deletedAccounts={deletedAccounts} searchSignals={searchSignals} onRunRecurrences={runAllRecurrences} prospects={prospects} onSaveProspect={saveProspect} onProspectConsent={setProspectConsent} onPublishProspect={publishProspect} onReleaseProspect={releaseProspect} sahaHatti={sahaHatti} onSaveSahaHatti={saveSahaHatti} /></PageTransition>} />
                 <Route path="/muteahhit" element={<PageTransition><MuteahhitPage /></PageTransition>} />
                 <Route path="/tedarikci" element={<PageTransition><TedarikciPage /></PageTransition>} />
                 <Route path="/satici/:id" element={<PageTransition><SaticiProfilPage user={user} users={users} listings={listings} offers={offers} reviews={reviews} getUserRating={getUserRating} onReport={addReport} /></PageTransition>} />

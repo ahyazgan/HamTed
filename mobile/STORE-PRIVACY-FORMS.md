@@ -83,6 +83,33 @@ mağaza reddi + hesap riski demektir, bu yüzden değişiklik yaparsan burayı d
 - **Play — Target audience:** 18+ değil; genel (ama çocuklara yönelik DEĞİL → "Not directed to children").
 - **Play — Government apps / Financial features / Ads:** hepsi **Hayır** (reklam yok, ödeme kapalı).
 
+## D2) Saha aday kaydı (1.0.4) — üye OLMAYAN firmaların verisi
+
+1.0.4'te saha ekibi, **henüz üye olmayan** firmaların ticari bilgilerini panelden
+girebiliyor (`prospects` tablosu). Formlar açısından durum:
+
+- **Yeni veri KATEGORİSİ gerekmiyor.** Girilen alanlar zaten beyan edilmiş
+  tiplerin içinde: Contact Info → Name / Phone Number / Email Address.
+- **Firmanın telefonu/e-postası UYGULAMADA YAYINLANMAZ.** RLS ile yalnız admin
+  okur (`prospects_admin_all`); kayıtsız/üye tarafın tek erişimi `prospect_by_token`
+  RPC'sidir ve o yalnız firma adı + rol + il döndürür. Vitrin ilanında görünen
+  numara platformun kendi **saha hattı**dır.
+- **Rıza:** kayıt, rıza damgası olmadan yayına ÇIKAMAZ — bu bir arayüz kuralı
+  değil **veritabanı kısıtıdır** (`prospects_consent_chk`). Rıza tarihi ve nasıl
+  alındığı kayıtta saklanır.
+- **Silme/kaldırma yolu:** Gizlilik metninde ilan edildi (`src/pages/LegalPage.jsx`,
+  "Üye Olmayan Firmalarin Vitrin Kayitlari"): info@yuklet.co'ya firma adıyla yazan
+  kayıt **7 gün** içinde yayından kaldırılır.
+- **Play "Data safety"** açısından bu veri, uygulamanın *kullanıcısına* ait değil
+  üçüncü bir işletmeye ait ticari bilgidir; mevcut beyanlar değişmez.
+- **Denetçi sorarsa** kanıt uygulamada görünür: kartta `SAHA KAYDI` rozeti, ilan
+  detayında "Bu firmayı YÜKLET saha ekibi ekledi ve bilgilerini firmadan aldı"
+  açıklaması, "Şikayet et" düğmesi ve gizlilik metnindeki kaldırma yolu.
+
+> Eğer ileride firmanın KENDİ numarası ilanda gösterilmeye başlanırsa bu bölüm
+> ve gizlilik metni yeniden yazılmalı — o zaman gerçekten üçüncü-taraf kişisel
+> veri yayınlanmış olur.
+
 ## E) Değişirse güncelle
 - **Ödeme (iyzico/PayTR) açılırsa:** hem Apple hem Play'e **Financial info → Payment info**
   eklenir + ödeme sağlayıcı üçüncü-taraf olarak beyan edilir.

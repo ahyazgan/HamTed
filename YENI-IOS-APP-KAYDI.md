@@ -1,4 +1,7 @@
-# YENİ iOS APP KAYDI — co.yuklet.app (2026-07)
+# YENİ iOS APP KAYDI — co.yuklet.app (2026-07, güncelleme 2026-09-06)
+
+> **Durum 2026-09-06:** Apple Destek'e "Public'e çevirin" talebi REDDEDİLDİ
+> (beklenen cevap). Aşağıdaki adımlar artık tek yol. Kod 1.0.4'te hazır.
 
 ## Neden gerekli?
 İlk uygulama kaydı (`com.yuklet.app`, Apple ID 6787767256) gönderim sırasında
@@ -43,6 +46,9 @@ Kod tarafı hazır (bu commit): Xcode projesi + codemagic.yaml + AASA
 - Description, Keywords, Subtitle, Support URL (yuklet.co), Privacy Policy URL.
 - **App Privacy** anketi: eski kayıttaki cevapların aynısı.
 - Age Rating anketi (yeni sosyal medya soruları dahil) yeniden doldurulur.
+  Apple'ın yeni anket son tarihi **7 Eylül 2026**; yeni kayıt zaten yeni anketi
+  zorunlu kılar. Cevaplar: kullanıcı üretimi içerik = ilan/yorum (var, moderasyon
+  + şikayet/engel mevcut), mesajlaşma = var (üyeler arası), sosyal ağ = hayır.
 - App Review bilgileri: demo hesap + notlar (eskisinin aynısı).
 
 ### 6. Supabase — Apple girişi için yeni bundle ID
@@ -57,9 +63,12 @@ Kod tarafı hazır (bu commit): Xcode projesi + codemagic.yaml + AASA
     otomatik olarak co.yuklet.app kaydına gider.
 
 ### 8. Gönderim
-- Yeni kayıtta sürüm **1.0.2** → build'i seç → Add for Review → Submit.
-  (Kaynak kod 1.0.2'de: `package.json`, `MARKETING_VERSION`, `app-version.json`.
-  Yeni kayıt olduğu için build numarası 1'den başlar, sorun değil.)
+- Yeni kayıtta sürüm **1.0.4** → build'i seç → Add for Review → Submit.
+  (Kaynak kod 1.0.4'te: `package.json`, `MARKETING_VERSION`. `app-version.json`
+  içindeki `latest` 1.0.2'de KALIR; ancak yeni sürüm mağazada yayınlandıktan
+  sonra artırılır. Yeni kayıt olduğu için build numarası 1'den başlar, sorun değil.)
+- "What's New" metni: `SURUM-NOTLARI.md` → 1.0.4. Denetçi notunu (saha kaydı
+  açıklaması) App Review "Notes" alanına yapıştır.
 
 ### 9. Onaydan SONRA — unutulursa uygulama içi güncelleme linki kırık kalır
 - Yeni kaydın Apple ID'sini al (App Store Connect → App Information → Apple ID).
